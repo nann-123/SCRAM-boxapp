@@ -1,0 +1,43 @@
+{
+  "version": "1.0",
+  "format": "scram_boxmodel_cfg_v1",
+  "supported_mapping_schemes": ["LEGACY", "DETERMINISTIC_NEAREST"],
+  "supported_redistribution_options": ["legacy", "core_conserv", "core_nogrow", "core_smallgrow"],
+  "scalar_fields": [
+    {"key": "coefficient_file", "line_index": 0, "type": "path", "group": "runtime", "label_en": "Coefficient file", "label_zh": "系数文件"},
+    {"key": "with_coag", "line_index": 1, "type": "bool_int", "group": "process", "label_en": "Enable coagulation", "label_zh": "启用凝并"},
+    {"key": "with_cond", "line_index": 2, "type": "bool_int", "group": "process", "label_en": "Enable condensation", "label_zh": "启用冷凝"},
+    {"key": "with_nucl", "line_index": 3, "subindex": 0, "type": "bool_int", "group": "process", "label_en": "Enable nucleation", "label_zh": "启用成核"},
+    {"key": "nucl_model", "line_index": 3, "subindex": 1, "type": "int", "group": "process", "label_en": "Nucleation model", "label_zh": "成核模型"},
+    {"key": "sulfate_computation", "line_index": 4, "type": "int", "group": "process", "label_en": "Sulfate condensation mode", "label_zh": "硫酸冷凝模式"},
+    {"key": "dynamic_solver", "line_index": 5, "subindex": 0, "type": "int", "group": "solver", "label_en": "Dynamic solver", "label_zh": "动力学求解器"},
+    {"key": "tag_thrm", "line_index": 5, "subindex": 1, "type": "int", "group": "solver", "label_en": "Thermodynamic tag", "label_zh": "热力学标记"},
+    {"key": "redistribution_method", "line_index": 6, "type": "int", "group": "solver", "label_en": "Redistribution method", "label_zh": "重分配方法"},
+    {"key": "redistribution_option", "line_index": "runtime_env", "type": "enum", "group": "solver", "label_en": "Redistribution core option", "label_zh": "RDB core-aware 选项"},
+    {"key": "init_scenario", "line_index": 7, "type": "int", "group": "initial", "label_en": "Initial scenario", "label_zh": "初始场景"},
+    {"key": "tag_external", "line_index": 8, "type": "int", "group": "initial", "label_en": "External mixing tag", "label_zh": "外混标记"},
+    {"key": "temperature", "line_index": 9, "type": "float", "group": "environment", "label_en": "Temperature (K)", "label_zh": "温度 (K)"},
+    {"key": "pressure", "line_index": 10, "type": "float", "group": "environment", "label_en": "Pressure (Pa)", "label_zh": "压力 (Pa)"},
+    {"key": "humidity", "line_index": 11, "type": "float", "group": "environment", "label_en": "Relative humidity", "label_zh": "相对湿度"},
+    {"key": "tagrho", "line_index": 12, "subindex": 0, "type": "int", "group": "environment", "label_en": "Density mode", "label_zh": "密度模式"},
+    {"key": "fixed_density", "line_index": 12, "subindex": 1, "type": "float", "group": "environment", "label_en": "Fixed density (kg/m^3)", "label_zh": "固定密度 (kg/m^3)"},
+    {"key": "final_time_hours", "line_index": 13, "type": "float", "group": "runtime", "label_en": "Simulation time (hours)", "label_zh": "模拟时长 (小时)"},
+    {"key": "dtmin_seconds", "line_index": 14, "type": "float", "group": "runtime", "label_en": "Minimum time step (s)", "label_zh": "最小时间步 (s)"},
+    {"key": "cut_dim", "line_index": 15, "type": "float", "group": "runtime", "label_en": "Cut diameter", "label_zh": "切分粒径"},
+    {"key": "n_sizebin", "line_index": 16, "subindex": 0, "type": "int", "group": "grid", "label_en": "Size bins", "label_zh": "粒径分段数"},
+    {"key": "kind_grid", "line_index": 16, "subindex": 1, "type": "int", "group": "grid", "label_en": "Grid mode", "label_zh": "网格模式"},
+    {"key": "n_groups", "line_index": 17, "type": "int", "group": "species", "label_en": "Species groups", "label_zh": "组分组数"},
+    {"key": "n_species", "line_index": 18, "subindex": 0, "type": "int", "group": "species", "label_en": "Species count", "label_zh": "组分数"},
+    {"key": "tag_init", "line_index": 18, "subindex": 1, "type": "int", "group": "species", "label_en": "Initialization mode", "label_zh": "初始化模式"},
+    {"key": "kind_composition", "line_index": "after_diameter", "type": "int", "group": "composition", "label_en": "Composition discretization mode", "label_zh": "组分离散模式"},
+    {"key": "n_frac", "line_index": "after_kind_composition", "type": "int", "group": "composition", "label_en": "Fraction sections", "label_zh": "质量分数分段数"}
+  ],
+  "tables": [
+    {"key": "species_records", "label_en": "Species records", "label_zh": "组分记录"},
+    {"key": "init_bin_number", "label_en": "Initial bin number", "label_zh": "初始 bin 数浓度"},
+    {"key": "init_bin_emission_species_1", "label_en": "Emission row 1", "label_zh": "排放行 1"},
+    {"key": "init_bin_emission_species_2", "label_en": "Emission row 2", "label_zh": "排放行 2"},
+    {"key": "diameter_bounds", "label_en": "Diameter bounds", "label_zh": "粒径边界"},
+    {"key": "fraction_bounds", "label_en": "Fraction bounds", "label_zh": "质量分数边界"}
+  ]
+}

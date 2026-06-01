@@ -1,0 +1,52 @@
+#
+# Install
+#
+
+# Required libraries : lua,
+# Optional (but recommended) : mpi and netcdf
+
+# Required includes : ops, seldon, talos
+# Make symbolic links to the path of each required include in the include directory.
+
+#
+# Compilation
+#
+
+# Python interface
+scons swig
+
+# Your program.cpp
+scons program
+
+# By default it compiles with MPI and NetCDF support.
+# To compile with MPI or/and without NetCDF, add options:
+scons swig mpi=no netcdf=no
+# The default is yes for both options.
+ 
+#
+# Install
+#
+
+
+# Only python interface need to be installed.
+# Go into one directory of your PYTHONPATH and make symbolic links
+# to the coefficient_repartition/python directory. If, for example,
+# $HOME/lib is in your PYTHONPATH :
+cd $HOME/lib
+ln -s absolute/path/to/coefficient_repartition/python coefficient_repartition
+ln -s absolute/path/to/coefficient_repartition/python coefficient_repartition_mpi
+
+
+#
+# Run
+#
+
+
+# To run python interface, in interactive python or in your script.py
+# add this import line:
+import coefficient_repartition as cr
+# or
+import coefficient_repartition_mpi as cr
+# if you want MPI support.
+
+# Refer to example directory for further details.

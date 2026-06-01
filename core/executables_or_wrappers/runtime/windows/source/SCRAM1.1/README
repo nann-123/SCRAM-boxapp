@@ -1,0 +1,44 @@
+*** What is SCRAM ***
+
+SCRAM is a size composition resolved aerosol model.
+It can simulate coagulation, condensation/evaporation and nucleation processes
+of externally mixed particles.
+
+*** Compilation and Installation ***
+
+First you should have a Linux system and
+make sure the construction tool: SCONS has already been installed.
+If not you can obtain it through the following instruction of the site below:
+http://www.scons.org/wiki/SconsTutorial1
+
+Then you can do the compilation by a simple commend:
+scons
+
+Required libraries :  netcdf
+
+*** Coefficient Repartition ***
+
+Two coefficient repartition data files are already provided under the
+main path:
+coef_s1_f1_b7.nc for internal mixing
+coef_s5_f3_b7.nc for external mixing
+
+If you want to compute those database by yourself, then you need
+to compile and install an separate program under the folder:
+COEF_REPATITION
+
+*** Run ***
+
+The program should be executed with a configuration file which
+contains all the initial condition and parametrization information.
+
+Two examples are provide under the folder:
+INIT
+
+For example, you can repeat the all dynamic external mixing
+simulation within the article with following command:
+./ProgramSCRAM INIT/cfg_megapole_01072009.cfg
+
+*** Contact ***
+If you have further questions, please contact:
+zhus@cerea.enpc.fr

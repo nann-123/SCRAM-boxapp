@@ -1,0 +1,188 @@
+#!/usr/bin/env python
+
+import os
+import sys
+import SCons
+
+# User settings.
+
+include_path_list = ["SRC", "INC"]
+library_path = []
+
+fortran_compiler = os.environ.get("FC", "gfortran-15")
+fortran_linker = fortran_compiler
+c_compiler = os.environ.get("CC", "gcc")
+
+safe_fp_flags = " -O2 -ffree-line-length-none -fno-fast-math -ffp-contract=off -frounding-math -fbacktrace " \
+                "-finit-integer=0 "
+debug_flags   = " -O0 -g -ffree-line-length-none -fcheck=bounds -fbacktrace -finit-integer=0 "
+
+#
+# Paths
+#
+
+# Main part, acting as a Makefile.
+# Nothing should be changed below.
+
+# Disable harmless warnings.
+SCons.Warnings.suppressWarningClass(SCons.Warnings.DuplicateEnvironmentWarning)
+
+# Compilation environment.
+env = Environment(ENV = os.environ)
+#env.Replace(CONFIGURELOG = "./.scons.log")
+
+mode = ARGUMENTS.get("mode", "safe")
+flags = safe_fp_flags
+if mode == "debug":
+    flags = debug_flags
+print("Build mode:", mode)
+# Whether to see compilation lines or prettier string.
+# if not ARGUMENTS.has_key("line"):
+if "line" not in ARGUMENTS:
+    env.Replace(F77COMSTR = "[F77] $SOURCE")
+    env.Replace(F90COMSTR = "[F90] $SOURCE")
+    env.Replace(FORTRANCOMSTR = "[FORTRAN] $SOURCE")
+    env.Replace(LINKCOMSTR = "[Linking] $TARGET")
+
+env.Replace(FORTRAN = fortran_compiler)
+env.Replace(F77 = fortran_compiler)
+env.Replace(F90 = fortran_compiler)
+env.Replace(F95 = fortran_compiler)
+env.Replace(CC = c_compiler)
+env.Replace(LINK = fortran_linker)
+if sys.platform.startswith("win") and c_compiler.lower().endswith("gcc"):
+    env.Replace(CCFLAGS = [])
+    env.Replace(LINKFLAGS = [])
+    env.Replace(CCCOM = "$CC -o $TARGET -c $CFLAGS $CCFLAGS $_CCCOMCOM $SOURCES")
+    env.Replace(LIBDIRPREFIX = "-L")
+    env.Replace(LIBDIRSUFFIX = "")
+    env.Replace(LIBLINKPREFIX = "-l")
+    env.Replace(LIBLINKSUFFIX = "")
+    env.Replace(LINKCOM = "$LINK -o $TARGET $LINKFLAGS $SOURCES $_LIBDIRFLAGS $_LIBFLAGS")
+
+def split_flags(text):
+    return [token for token in text.split() if token]
+
+def config_output(command):
+    try:
+        return os.popen(command).read().strip()
+    except OSError:
+        return ""
+
+
+netcdf_root = os.environ.get("NETCDF_ROOT") or os.environ.get("CONDA_PREFIX")
+netcdf_fflags = []
+netcdf_flibs = []
+netcdf_cflags = []
+netcdf_clibs = []
+
+if netcdf_root and sys.platform.startswith("win"):
+    netcdf_include = os.environ.get("NETCDF_INCLUDE") or os.path.join(netcdf_root, "Library", "include")
+    netcdf_lib = os.environ.get("NETCDF_LIB") or os.path.join(netcdf_root, "Library", "lib")
+    netcdf_fflags = ["-I" + netcdf_include]
+    netcdf_cflags = ["-I" + netcdf_include]
+    netcdf_flibs = ["-L" + netcdf_lib, "-lnetcdff", "-lnetcdf"]
+    netcdf_clibs = []
+else:
+    netcdf_fflags = split_flags(config_output("nf-config --fflags 2>/dev/null"))
+    netcdf_flibs = split_flags(config_output("nf-config --flibs 2>/dev/null"))
+    netcdf_cflags = split_flags(config_output("nc-config --cflags 2>/dev/null"))
+    netcdf_clibs = split_flags(config_output("nc-config --libs 2>/dev/null"))
+
+for token in netcdf_fflags + netcdf_cflags:
+    if token.startswith("-I"):
+        include_path_list.append(token[2:])
+
+for token in netcdf_flibs + netcdf_clibs:
+    if token.startswith("-L"):
+        library_path.append(token[2:])
+
+link_libs = [token[2:] for token in netcdf_flibs + netcdf_clibs if token.startswith("-l")]
+link_flags = [token for token in netcdf_flibs + netcdf_clibs if not token.startswith("-l") and not token.startswith("-L")]
+
+env.Append(F77PATH = include_path_list)
+env.Append(FORTRANPATH = include_path_list)
+env.Append(F90PATH = include_path_list)
+compile_flags = split_flags(flags)
+env.Append(FORTRANFLAGS = compile_flags)
+env.Append(F90FLAGS = compile_flags)
+env.Append(LINKFLAGS = compile_flags + link_flags)
+env.Append(LIBPATH = library_path)
+env.Append(LIBS = link_libs)
+
+if not (netcdf_root and sys.platform.startswith("win")):
+    conf = Configure(env)
+    for library in ["netcdf", "netcdff"]:
+        conf.CheckLib(library)
+    env = conf.Finish()
+
+############
+# Programs #
+############
+env_coef = env.Clone()
+   		      
+program_sources = [
+                            'SRC/AtmoData/Aerosol.f',
+	                    'SRC/AtmoData/compute_binary_nucleation.f',
+	                    'SRC/AtmoData/compute_ternary_nucleation.f',
+	                    'SRC/AtmoData/compute_density.f',
+	                    'SRC/AtmoData/compute_bidisperse_coagulation.f90',
+	                    'SRC/AtmoData/compute_monodisperse_coagulation.f90',
+	                    'SRC/AtmoData/compute_general.f90',
+                            'SRC/rdb/test_mass_nb.f90',
+                            'SRC/rdb/redist_euler.f90',
+                            'SRC/rdb/euler_mass.f90',
+                            'SRC/rdb/euler_number.f90',
+                            'SRC/rdb/euler_coupled.f90',
+                            'SRC/rdb/hemen.f90',
+                            'SRC/rdb/moving_diam.f90',
+                            'SRC/isorropia/isorev.f',
+                            'SRC/isorropia/isofwd.f',
+			    'SRC/isorropia/isocom.f',
+	                    'SRC/H2O/aabsorp.c',
+                            'SRC/H2O/aabsparti.c',
+                            'SRC/H2O/amain.c',
+                            'SRC/H2O/amain_loc.c',
+                            'SRC/H2O/bmain.c',
+                            'SRC/H2O/bmain_loc.c',
+                            'SRC/H2O/bparti.c',
+                            'SRC/H2O/bunidriver.c',
+                            'SRC/H2O/kpart.c',
+                            'SRC/H2O/newt_rou.c',
+                            'SRC/H2O/oamain.c',
+                            'SRC/H2O/partfunc2.c',
+                            'SRC/H2O/thermoa.c',
+                            'SRC/H2O/thermob.c',
+                            'SRC/H2O/typea.c',
+                            'SRC/H2O/typeaabs.c',
+                            'SRC/H2O/typeb.c',
+                            'SRC/H2O/unidriver.c',
+                            'SRC/H2O/zsr.c',
+                            'SRC/H2O/unifac.f',
+                            'SRC/ModuleInitialization.f90',
+                            'SRC/ModuleCoeffRepartitionBoxmodel.f90',
+                            'SRC/ModuleCoefficientRepartition.f90',
+                            'SRC/ModuleThermodynamics.f90',
+                            'SRC/ModulePhysicalbalance.f90',
+                            'SRC/ModuleRedistribution.f90',
+	                    'SRC/ModuleDiscretization.f90',
+                            'SRC/ModuleCondensation.f90',
+                            'SRC/ModuleResultoutput.f90',
+                            'SRC/ModuleCoagulation.f90',
+                            'SRC/ModuleCongregation.f90',
+                            'SRC/ModuleBulkequibrium.f90',
+                            'SRC/ModuleAdaptstep.f90',
+	                    'SRC/ProgramSCRAM.f90',
+]
+
+program_objects = []
+previous_objects = []
+for source in program_sources:
+    objects = env.Object(source)
+    if previous_objects:
+        env.Depends(objects, previous_objects)
+    program_objects.extend([node for node in objects if str(node).lower().endswith((".obj", ".o"))])
+    previous_objects.extend(objects)
+
+env.Program(target = "ProgramSCRAM", source = program_objects)
+	                    

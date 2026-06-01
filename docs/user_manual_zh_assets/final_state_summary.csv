@@ -1,0 +1,3 @@
+case_name,scheme,status,final_total_mass,final_total_number,relative_difference_vs_external_mass,relative_difference_vs_external_number,relative_difference_vs_internal_mass,relative_difference_vs_internal_number
+gmd_paris_full,INTERNAL_MIXING,ok,32.73266204156129,10239673442.915386,-0.03355331535454577,-0.10457591628700215,0.0,0.0
+gmd_paris_full,EXTERNAL_MIXING,ok,33.869082031741286,11435557328.830364,0.0,0.0,0.03471822697271186,0.11678926018313454

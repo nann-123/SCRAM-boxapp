@@ -1,0 +1,1 @@
+"""SCRAM BoxApp desktop package."""
