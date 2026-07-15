@@ -1,0 +1,52 @@
+# Copyright (C) 2010 Vivien Mallet
+#
+# This file is part of Ops, a library for parsing Lua configuration files.
+#
+# Ops is free software; you can redistribute it and/or modify it under the
+# terms of the GNU Lesser General Public License as published by the Free
+# Software Foundation; either version 2.1 of the License, or (at your option)
+# any later version.
+#
+# Ops is distributed in the hope that it will be useful, but WITHOUT ANY
+# WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU Lesser General Public License for more
+# details.
+#
+# You should have received a copy of the GNU Lesser General Public License
+# along with Ops. If not, see http://www.gnu.org/licenses/.
+#
+# ---------------------------------------------------------------------------
+# Adaptations for Windows / MSYS2 build environment (2026):
+#   - Use os.environ to inherit system PATH and compiler settings.
+#   - Auto-detect library and include paths from LD_LIBRARY_PATH, LIBRARY_PATH,
+#     CPATH, and CPLUS_INCLUDE_PATH environment variables.
+#   - Probe for "m", "dl", and "lua" libraries instead of hard-coding "lua5.1".
+#   - Removed SWIG -Wall flag for cleaner output on modern toolchains.
+# ---------------------------------------------------------------------------
+
+import os, distutils.sysconfig
+
+include_path_list = [distutils.sysconfig.get_python_inc(),
+                     "/net/home/Debry/local/include/lua"]
+
+env = Environment(ENV = os.environ)
+env.Replace(CCFLAGS = "-O2")
+env.Replace(SWIGFLAGS = ["-c++", "-python"])
+env.Append(CPPPATH = include_path_list)
+env.Replace(SHLIBPREFIX = "")
+
+if os.environ.has_key("LD_LIBRARY_PATH"):
+    env.Append(LIBPATH = os.environ["LD_LIBRARY_PATH"].split(":"))
+if os.environ.has_key("LIBRARY_PATH"):
+    env.Append(LIBPATH = os.environ["LIBRARY_PATH"].split(":"))
+if os.environ.has_key("CPATH"):
+    env.Append(CPPPATH = os.environ["CPATH"].split(":"))
+if os.environ.has_key("CPLUS_INCLUDE_PATH"):
+    env.Append(CPPPATH = os.environ["CPLUS_INCLUDE_PATH"].split(":"))
+
+conf = Configure(env)
+for library in ["m", "dl", "lua"]:
+    if conf.CheckLib(library):
+        env.Append(LINKFLAGS = "-l" + library)
+
+env.SharedLibrary("_ops.so", ["Ops.cpp", "ops.i"])

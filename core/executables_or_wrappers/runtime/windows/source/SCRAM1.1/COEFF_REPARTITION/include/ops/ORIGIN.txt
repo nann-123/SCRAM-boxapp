@@ -1,0 +1,87 @@
+ORIGIN — Ops: Lua Configuration Parser
+======================================
+
+Author:     Vivien Mallet <Vivien.Mallet@inria.fr>
+            <dev@vivienmallet.net>
+License:    GNU LGPL 2.1 (see "license" file in this directory)
+Origin:     git repository at Debry@canis01:gitroot/ops
+Version:    commit bdfd572857980a23053921783bdfe701b955ad1b
+Date:       2010
+
+Description
+-----------
+Ops is a C++ library for parsing Lua configuration files. It provides a
+programmatic interface to read, write, and manipulate Lua-based configuration,
+with SWIG bindings for Python.
+
+Original repository history (34 commits)
+-----------------------------------------
+  bdfd572 Initial import of "version" and "history".
+  6524df3 Replaced the GNU LGPL license file for version 3 with that for version 2.1.
+  5af38e0 Fixed a bug: in the output of 'Ops::LuaDefinition', mixing accesses
+           with named keys and with indexes was not supported.
+  ed39f5f (no message)
+  19f81fe Added 'Ops::CheckConstraintOnValue(string, string)'.
+  bb08230 The default constructor 'Ops::Ops()' now opens a Lua state, and
+           'Ops::Open(string, bool)' gets a Boolean parameter to determine
+           whether the state is closed before loading the file.
+  d60c226 Added 'Ops::UpdateLuaDefinition'.
+  2829ea5 Added support for square brackets, [], in 'Ops::LuaDefinition'.
+  14b29ea 'DISP' is now defined only if not already defined.
+  757ecc6 Added 'Ops::GetReadEntryList', 'Ops::LuaDefinition' and
+           'Ops::WriteLuaDefinition'.
+  546ef56 (no message)
+  b2b687d Added 'Ops::IsFunction(string)'.
+  9628213 Added support for functions in the Python interface.
+  0c8bed3 Added support for functions, with the methods 'Apply'.
+  8cc4d04 Added the file "license".
+  8ec3c87 (no message)
+  627a55a Added 'Ops::DoFile(string)' and 'Ops::DoString(string)'.
+  f001219 Added 'Ops::Reload'.
+  dbe0bfc Fixed a bug: 'Ops::Close()' did not set 'state_' to NULL.
+  35f8398 Removed the useless methods 'Ops::Split'.
+  78cfcee Added 'Ops::Is<T>(string)'.
+  a490b23 Fixed a bug: in 'Ops::WalkDown', missing bounds check for table access.
+  c3fffbc Added 'Ops::Exists(string)'.
+  f18e8f3 Improved 'Ops::PutOnStack(string)' to handle accesses with "[i]".
+  ad23cfd (no message)
+  98b9774 (no message)
+  5d293e2 Initial import of the Python interface.
+  1ad9cd5 Initial import.
+  364dc8c Added the template methods 'Ops::Get'.
+  a85b695 Renamed 'Ops::Get' to 'Ops::Set'.
+  59f98ad Fixed include issues.
+  e6183d4 Added 'Ops::GetEntryList(string)'.
+  e109ee1 (no message)
+  40f3f2f Added support for vectors.
+  e80bb4e Simplified the code with 'Ops::Convert' methods.
+  a07e64d Added support for Booleans.
+  491bd57 Added missing documentation.
+  b1ddd11 Added support for a prefix.
+  c3fbbad Initial import.
+
+Acquisition
+-----------
+The original private repository is hosted on the CERFACS laboratory server
+(canis01). Access requires authorization from the original author or the
+CERFACS/INRIA research group.
+
+For inquiries, contact:
+  Vivien Mallet <Vivien.Mallet@inria.fr>
+  CERFACS, 42 Avenue Gaspard Coriolis, 31057 Toulouse Cedex 1, France
+
+Integration into SCRAMBoxApp
+-----------------------------
+This directory was converted from a git submodule to a regular directory on
+2026-07-15 for portability reasons:
+
+  - The original remote (canis01) is a private server, inaccessible to
+    third-party developers.
+  - Ops has not been updated since 2010 and is treated as a stable, static
+    dependency.
+  - A regular directory integrates cleanly with PyInstaller packaging and
+    CESM build systems.
+
+All source files, copyright notices, and the LGPL 2.1 license are preserved
+intact. The SConstruct build script has been adapted for Windows/MSYS2
+environments while retaining the original LGPL header.

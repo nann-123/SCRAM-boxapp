@@ -27,6 +27,12 @@ dist/
 core/executables_or_wrappers/runtime/*/source/**/ProgramSCRAM
 core/executables_or_wrappers/runtime/*/source/**/ProgramSCRAM.exe
 
+# Ops library SWIG/SCons generated files (not committed, rebuilt locally)
+**/include/ops/_ops.so
+**/include/ops/ops.py
+**/include/ops/ops_wrap.cc
+**/include/ops/ops_wrap.os
+
 # Local logs and scratch files
 *.log
 *.tmp
