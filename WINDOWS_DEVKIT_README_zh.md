@@ -200,7 +200,7 @@ D:\SCRAMBoxApp-WinDevKit
 cd D:\SCRAMBoxApp-WinDevKit
 ```
 
-创建虚拟环境：
+在**项目根目录**创建虚拟环境（这是标准位置，方便后续打包和 CESM 耦合）：
 
 ```powershell
 py -3.12 -m venv .venv
@@ -219,11 +219,13 @@ python -m venv .venv
 .\.venv\Scripts\python -m pip install -r requirements.txt
 ```
 
-可选：把本次 PowerShell 会话的 Python 指向这个虚拟环境：
-
-```powershell
-$env:SCRAM_PYTHON = "$PWD\.venv\Scripts\python.exe"
-```
+> **说明**：启动脚本 `launch_app.py` 查找 Python 的顺序为：
+> 1. `SCRAM_PYTHON` 环境变量（如果设置了）
+> 2. 项目根目录的 `.venv`（推荐位置）
+> 3. `core\executables_or_wrappers\runtime\windows\.venv`（旧版兼容）
+> 4. 都没找到则在根目录自动创建
+>
+> 因此只要按上面步骤在根目录创建 `.venv`，直接运行启动脚本即可，**无需额外设置环境变量**。
 
 启动 GUI：
 

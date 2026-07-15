@@ -111,23 +111,38 @@ The build outputs are:
 - `dist\windows\SCRAMBoxApp-windows-x64.zip`
 - `dist\windows\SCRAMBoxApp-Setup-windows-x64.exe`
 
-For development from the source tree:
+### Development setup
+
+Create a virtual environment at the **project root** (the standard location for
+development, packaging, and CESM coupling):
 
 ```bat
-cd scram_boxapp_shared_release_clean
+cd SCRAMBoxApp-WinDevKit
+python -m venv .venv
+.\.venv\Scripts\python -m pip install --upgrade pip
+.\.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+The launcher (`scripts\launch_app.py`) searches for Python in this order:
+1. `SCRAM_PYTHON` environment variable (if set)
+2. Project-root `.venv` (recommended)
+3. `core\executables_or_wrappers\runtime\windows\.venv` (legacy fallback)
+4. If none found, auto-creates `.venv` at the project root
+
+Start the GUI:
+
+```bat
 scripts\run_app_windows.bat
 ```
 
-The Windows runtime now includes a native `ProgramSCRAM.exe` plus the required
-NetCDF/Fortran runtime DLLs. The launcher creates
-`core\executables_or_wrappers\runtime\windows\.venv` on first use if it is
-missing. If Python is not on `PATH`, set `SCRAM_PYTHON` to a Python 3.10+
-interpreter.
+The Windows runtime includes a native `ProgramSCRAM.exe` plus the required
+NetCDF/Fortran runtime DLLs. If Python is not on `PATH`, set `SCRAM_PYTHON` to
+a Python 3.10+ interpreter.
 
 Run the standard smoke suite on Windows with:
 
 ```bat
-core\executables_or_wrappers\runtime\windows\.venv\Scripts\python scripts\run_standard_tests.py
+.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\student_standard_tests
 ```
 
 ## GUI workflow

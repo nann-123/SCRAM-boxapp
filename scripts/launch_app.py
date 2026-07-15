@@ -19,7 +19,15 @@ def platform_name() -> str:
     return "linux"
 
 
-def venv_python(platform_dir: Path) -> Path:
+def root_venv_python() -> Path:
+    """Return the Python executable inside the project-root ``.venv`` (the standard location)."""
+    if sys.platform.startswith("win"):
+        return ROOT / ".venv" / "Scripts" / "python.exe"
+    return ROOT / ".venv" / "bin" / "python"
+
+
+def platform_venv_python(platform_dir: Path) -> Path:
+    """Return the Python executable inside the platform-specific legacy ``.venv``."""
     if sys.platform.startswith("win"):
         return platform_dir / ".venv" / "Scripts" / "python.exe"
     return platform_dir / ".venv" / "bin" / "python"
@@ -60,27 +68,35 @@ def bootstrap_python() -> str | None:
 
 
 def ensure_venv(platform_dir: Path) -> Path:
+    # 1) Explicit SCRAM_PYTHON override — always wins.
     explicit = explicit_python()
     if explicit:
         return explicit
 
-    python_bin = venv_python(platform_dir)
-    if python_bin.exists():
-        return python_bin
+    # 2) Project-root .venv — the standard, portable location.
+    root_python = root_venv_python()
+    if root_python.exists():
+        return root_python
 
-    if not platform_dir.exists() or not os.access(platform_dir, os.W_OK):
+    # 3) Platform-specific legacy .venv — backwards compatibility.
+    legacy_python = platform_venv_python(platform_dir)
+    if legacy_python.exists():
+        return legacy_python
+
+    # 4) Nothing found — create .venv at the project root.
+    if not ROOT.exists() or not os.access(ROOT, os.W_OK):
         raise SystemExit(
-            f"Bundled virtual environment not found: {python_bin}\n"
-            "Install the shared package with a prebuilt venv, or make the runtime directory writable so it can be created."
+            f"Project root is not writable: {ROOT}\n"
+            "Make the project directory writable so the virtual environment can be created."
         )
 
     bootstrap = os.environ.get("SCRAM_PYTHON") or bootstrap_python()
     if bootstrap is None:
-        raise SystemExit("No bootstrap Python interpreter was found to create the bundled virtual environment.")
+        raise SystemExit("No bootstrap Python interpreter was found to create the virtual environment.")
 
-    subprocess.run([bootstrap, "-m", "venv", str(platform_dir / ".venv")], check=True)
-    subprocess.run([str(python_bin), "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")], check=True)
-    return python_bin
+    subprocess.run([bootstrap, "-m", "venv", str(ROOT / ".venv")], check=True)
+    subprocess.run([str(root_python), "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")], check=True)
+    return root_python
 
 
 def main() -> int:
