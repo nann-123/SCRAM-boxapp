@@ -275,7 +275,11 @@ class MainWindow(QMainWindow):
         self.field_widgets["temperature"] = self._double_spin(200.0, 400.0, 298.0, single_step=1.0)
         self.field_widgets["pressure"] = self._double_spin(10000.0, 200000.0, 101325.0, decimals=1, single_step=1000.0)
         self.field_widgets["humidity"] = self._double_spin(0.0, 1.0, 0.65, decimals=3, single_step=0.01)
-        self.field_widgets["init_scenario"] = self._int_spin(0, 9)
+        self.scenario_combo = QComboBox()
+        self.scenario_combo.addItem(self.i18n.t("scenario_hazy"), 1)
+        self.scenario_combo.addItem(self.i18n.t("scenario_urban"), 2)
+        self.scenario_combo.addItem(self.i18n.t("scenario_clear"), 3)
+        self.scenario_combo.currentIndexChanged.connect(self._sync_visibility)
         self.tag_external_box = QCheckBox(self.i18n.t("tag_external"))
         self.tag_external_box.toggled.connect(self._sync_visibility)
         self.tagrho_combo = QComboBox()
@@ -286,7 +290,7 @@ class MainWindow(QMainWindow):
         environment_form.addRow(self.i18n.t("temperature"), self.field_widgets["temperature"])
         environment_form.addRow(self.i18n.t("pressure"), self.field_widgets["pressure"])
         environment_form.addRow(self.i18n.t("humidity"), self.field_widgets["humidity"])
-        environment_form.addRow(self.i18n.t("init_scenario"), self.field_widgets["init_scenario"])
+        environment_form.addRow(self.i18n.t("init_scenario"), self.scenario_combo)
         environment_form.addRow(self.i18n.t("mixing_state"), self.tag_external_box)
         environment_form.addRow(self.i18n.t("density_mode"), self.tagrho_combo)
         environment_form.addRow(self.i18n.t("fixed_density"), self.field_widgets["fixed_density"])
@@ -391,6 +395,11 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.logspace_button, 0, 8)
         outer.addWidget(controls)
 
+        structure_help_label = QLabel(self.i18n.t("structure_help"))
+        structure_help_label.setWordWrap(True)
+        structure_help_label.setStyleSheet("color: #666; font-size: 11px; padding: 2px 0;")
+        outer.addWidget(structure_help_label)
+
         self.structure_tabs = QTabWidget()
         self.species_meta_table = QTableWidget()
         self.size_bins_table = QTableWidget()
@@ -402,6 +411,9 @@ class MainWindow(QMainWindow):
         self.structure_tabs.addTab(self.fraction_table, "")
         self.structure_tabs.addTab(self.emission_table, "")
         self.structure_tabs.addTab(self.initial_mass_table, "")
+        for _table in (self.species_meta_table, self.size_bins_table, self.fraction_table,
+                        self.emission_table, self.initial_mass_table):
+            _table.cellChanged.connect(lambda _r, _c, t=_table: self._on_table_cell_changed(t))
         outer.addWidget(self.structure_tabs)
 
     def _build_run_tab(self) -> None:
@@ -630,6 +642,11 @@ class MainWindow(QMainWindow):
         self.with_nucl_box.setChecked(bool(int(scalars["with_nucl"])))
         self.tag_external_box.setChecked(bool(int(scalars["tag_external"])))
         self.tagrho_combo.setCurrentIndex(0 if int(scalars["tagrho"]) == 1 else 1)
+        init_sc = int(scalars.get("init_scenario", 3))
+        for idx in range(self.scenario_combo.count()):
+            if self.scenario_combo.itemData(idx) == init_sc:
+                self.scenario_combo.setCurrentIndex(idx)
+                break
         redistribution_option = str(scalars.get("redistribution_option", "core_conserv"))
         for idx in range(self.redistribution_option_combo.count()):
             if self.redistribution_option_combo.itemData(idx) == redistribution_option:
@@ -665,6 +682,7 @@ class MainWindow(QMainWindow):
         data["scalars"]["with_nucl"] = 1 if self.with_nucl_box.isChecked() else 0
         data["scalars"]["tag_external"] = 1 if self.tag_external_box.isChecked() else 0
         data["scalars"]["tagrho"] = int(self.tagrho_combo.currentData())
+        data["scalars"]["init_scenario"] = int(self.scenario_combo.currentData())
         data["scalars"]["coefficient_file"] = self.coefficient_file_edit.text().strip()
         data["scalars"]["redistribution_option"] = str(self.redistribution_option_combo.currentData())
         for key, widget in self.field_widgets.items():
@@ -740,6 +758,10 @@ class MainWindow(QMainWindow):
         snapshot = self.data if not hasattr(self, "species_meta_table") else self._collect_data()
         self.config_model.serialize(snapshot, preview_path)
         return preview_path.read_text(encoding="utf-8")
+
+    def _on_table_cell_changed(self, _table: QTableWidget) -> None:
+        """Update config preview when any structure-editor table cell is edited."""
+        self.raw_preview.setPlainText(self._render_preview_text())
 
     def _sync_visibility(self, *_args: object) -> None:
         scheme = self.mapping_scheme_combo.currentText()
@@ -1273,7 +1295,43 @@ class MainWindow(QMainWindow):
 5. 输出目录：显示当前实验结果根目录。
 
 四、结构编辑页
-先定义 species、size bins 和 fraction 数量，再点击“生成结构”重建表格。fraction 是 external mixing 中的质量分数区间；例如论文 Greater Paris 案例使用 0-0.2、0.2-0.8、0.8-1.0 三个区间来区分组成状态。
+先设定组分数、粒径分段数和质量分数分段数（顶行三个数字框），点击
+「生成结构」创建表格。编辑表格数值后，左侧 config_preview 自动刷新；
+点击「重建表格」可将当前表格值同步回内部数据模型。
+
+⚠️ 「生成结构」会清空并重建所有表格。如果修改了 n_sizebin（粒径分段数）
+或 n_frac（质量分数分段数），diameter_bounds（粒径边界）和 fraction_bounds
+（分数边界）将重置为默认等间距值，之前手动调整的数据会丢失。
+
+五个子表格：
+
+(1) Species 表（n_species 行 × 6 列）
+  - 每行一个化学组分：编号、名称、组别、初始气相浓度(µg/m³)、排放率、备注。
+  - 增加 n_species：末尾追加空行，默认值全为零。
+  - 减少 n_species：末尾多余行被截断丢弃。
+
+(2) Size bins 表（n_sizebin 行 × 6 列）
+  - 每行一个粒径段：编号、下界(µm)、上界(µm)、代表粒径、初始数浓度(#/m³)、备注。
+  - 粒径边界按对数间距自动生成；可手动编辑单个边界值。
+  - 增加 n_sizebin：diameter_bounds 重算，初始数浓度末尾补 1000。
+  - 减少 n_sizebin：末尾行截断，diameter_bounds 重算。
+
+(3) Fraction 表（n_frac 行 × 4 列）
+  - 每行一个质量分数区间（仅 external mixing 使用）：编号、下界、上界、备注。
+  - 默认均匀分割 [0, 1]；可手动编辑为不均匀区间。
+  - 增加/减少 n_frac：均分重算边界（手动编辑的值会丢失）。
+  - Greater Paris 案例示例：0-0.2、0.2-0.8、0.8-1.0 三个区间。
+
+(4) Emission 表（n_species 行 × (n_sizebin+2) 列）
+  - 各组分×各粒径段的排放率矩阵。第 1 列为组分名（只读），
+    末列为操作按钮（+ 在上方插入新物种，− 删除当前行；至少保留 1 个物种）。
+  - 增加/减少 n_species：行数跟随，多删少补零。
+  - 增加/减少 n_sizebin：数据列数跟随，多删少补零。
+
+(5) 初始质量表（n_species 行 × n_sizebin 列）
+  - 各组分×各粒径段的初始质量浓度矩阵。纯数据，无额外列。
+  - 增加/减少 n_species：行数跟随，多删少补零。
+  - 增加/减少 n_sizebin：列数跟随，多删少补零。
 
 五、运行监控页
 运行时显示当前案例、混合假设、wall-clock、模拟时间、步数、ETA、总 number、总 mass、平均粒径、active bins、active pairs、最近日志和警告。
@@ -1315,7 +1373,44 @@ This desktop app wraps SCRAM as a workflow-oriented GUI for comparing internal m
 - Output Directory: current experiment result root.
 
 4. Structure Editor
-Define species, size bins, and fraction dimensions, then generate the editable tables. Fractions are the mass-fraction sections used by external mixing.
+Set species count, size bins, and fraction sections (top-row spinboxes), then click
+"Generate Structure" to create tables. Editing cell values updates the config preview
+in real time. "Rebuild Tables" syncs current table values back to the internal data model.
+
+⚠️ "Generate Structure" clears and recreates all tables. Changing n_sizebin or n_frac
+resets diameter_bounds and fraction_bounds to default evenly-spaced values; any
+manually edited boundary values will be lost.
+
+Five Sub-tables:
+
+(1) Species Table (n_species rows × 6 columns)
+  - One chemical species per row: ID, name, group, initial gas (µg/m³), emission, notes.
+  - Increasing n_species: append empty rows (all zeros) at the end.
+  - Decreasing n_species: truncate extra rows from the end.
+
+(2) Size Bins Table (n_sizebin rows × 6 columns)
+  - One size bin per row: ID, lower bound (µm), upper bound, representative diameter,
+    initial number (#/m³), notes. Bounds are auto-generated on a log scale.
+  - Increasing n_sizebin: regenerates diameter_bounds, appends 1000 to init numbers.
+  - Decreasing n_sizebin: truncates end rows, regenerates diameter_bounds.
+
+(3) Fraction Table (n_frac rows × 4 columns)
+  - One mass-fraction section per row (external mixing only): ID, lower, upper, notes.
+  - Default evenly spaced [0, 1]; can be manually edited to non-uniform intervals.
+  - Changing n_frac: evenly respaces bounds (manual edits will be lost).
+  - Greater Paris example: 0–0.2, 0.2–0.8, 0.8–1.0 (three sections).
+
+(4) Emission Table (n_species rows × (n_sizebin+2) columns)
+  - Emission rate matrix: species × size bins. Column 1 = species name (read-only),
+    last column = action buttons (+ insert species above, − delete current row;
+    at least 1 species must remain).
+  - Changing n_species: rows follow, truncated/padded with zeros.
+  - Changing n_sizebin: data columns follow, truncated/padded with zeros.
+
+(5) Initial Mass Table (n_species rows × n_sizebin columns)
+  - Initial mass concentration matrix: species × size bins. Pure data, no extra columns.
+  - Changing n_species: rows follow, truncated/padded with zeros.
+  - Changing n_sizebin: columns follow, truncated/padded with zeros.
 
 5. Run Monitor
 Shows case, assumption, progress, ETA, total number, total mass, mean diameter, active bins, active pairs, logs, and warnings.
@@ -1331,6 +1426,7 @@ Choose GMD Greater Paris scenario D, run the internal/external comparison, inspe
         self.log_view.append(message)
 
     def _fill_table(self, table: QTableWidget, headers: list[str], rows: list[list[Any]]) -> None:
+        table.blockSignals(True)
         table.setColumnCount(len(headers))
         table.setRowCount(len(rows))
         table.setHorizontalHeaderLabels(headers)
@@ -1338,6 +1434,7 @@ Choose GMD Greater Paris scenario D, run the internal/external comparison, inspe
             for col_idx, value in enumerate(row):
                 table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
         table.resizeColumnsToContents()
+        table.blockSignals(False)
 
     def _table_text(self, table: QTableWidget, row: int, col: int) -> str:
         item = table.item(row, col)
