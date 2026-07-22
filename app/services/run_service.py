@@ -90,8 +90,9 @@ class RunService:
         return executable.exists() and self._is_compatible_executable(executable)
 
     def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
-        preset = CASE_PRESETS.get(case_name)
-        data = self._with_case_preset(config_data, preset) if preset else self.config_model.normalize(config_data)
+        # Case preset provides suggested values to the GUI (via apply_case_preset),
+        # but the user may override them.  Normalize without forcing preset values.
+        data = self.config_model.normalize(config_data)
         data = self._with_mixing_assumption(data, scheme)
         config_path = self.generated_root / f"{case_name}_{scheme.lower()}.cfg"
         runtime_config_relpath = self._runtime_config_relpath(case_name, scheme)
