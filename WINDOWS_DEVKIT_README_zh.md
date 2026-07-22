@@ -310,19 +310,11 @@ scripts\package_app_windows.bat
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\package_app_windows.ps1
 ```
 
-该脚本会自动执行以下步骤：
+该脚本会自动完成 venv 检查、依赖安装、运行时复制、PyInstaller 打包和安装包生成。
 
-1. 检查或创建根目录 `.venv`。
-2. 安装 `requirements.txt` 和 `pyinstaller`。
-3. 检查 `core\executables_or_wrappers\runtime\windows\ProgramSCRAM.exe` 是否存在。
-4. 把 Windows 运行时复制进构建载荷。
-5. 用 PyInstaller 打包 `app\main.py`。
-6. 把 `docs\` 中的手册和报告依赖说明复制进发布目录。
-7. 把 `third_party\report_dependencies\windows\` 中的可选依赖复制进发布目录。
-8. 生成便携 zip。
-9. 用 Windows C# 编译器生成自解压安装包。
+> **前提**：需先完成第 5 节的环境配置（项目根目录已有 `.venv` 且依赖已安装）。
 
-成功后会得到：
+成功后得到：
 
 ```text
 dist\windows\SCRAM BoxApp\SCRAM BoxApp.exe
