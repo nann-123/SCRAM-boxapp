@@ -240,7 +240,7 @@ scripts\run_app_windows.bat
 每次修改代码后，至少运行一次标准测试：
 
 ```powershell
-.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\student_standard_tests
+.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\standard_tests
 ```
 
 测试会检查：
@@ -257,7 +257,7 @@ scripts\run_app_windows.bat
 测试输出在：
 
 ```text
-install_logs\student_standard_tests\
+install_logs\standard_tests\
 ```
 
 测试成功时终端会看到类似：
@@ -405,11 +405,16 @@ docs\config_mapping_spec.md
 
 ## 11. 结果输出位置
 
-开发模式运行时，标准测试和 GUI 结果通常写入：
+GUI 运行时结果写入「设置」页指定的输出目录：
 
 ```text
-install_logs\
+{输出目录}/single/{实验名称}_{案例预设}/      ←「运行」单个假设
+{输出目录}/compare/{实验名称}_{案例预设}/     ←「比较」两种假设
 ```
+
+案例预设不匹配时仅用实验名称，不加预设后缀。每次运行自动保存 `experiment_config.cfg` 到输出目录，方便事后追溯参数。
+
+标准测试（CLI）结果强制写入 `install_logs/`，由 `--output-root` 参数指定，防止误删用户数据。
 
 打包后的普通用户软件会把用户结果写到 Windows 用户数据目录下，核心路径由下面文件决定：
 
@@ -503,7 +508,7 @@ core\executables_or_wrappers\runtime\windows\ProgramSCRAM.exe
 
 GUI 方向学生：主要看 `app\views\main_window.py`、`app\i18n\`、`app\services\settings_service.py`。
 
-模型运行方向学生：主要看 `app\services\run_service.py`、`core\templates\`、`core\defaults\`。
+模型运行方向学生：主要看 `app\services\run_service.py`、`app\services\template_service.py`、`core\templates\`、`core\defaults\`。
 
 结果分析方向学生：主要看 `app\services\plot_service.py`、`app\services\report_service.py`。
 

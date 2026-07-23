@@ -1115,7 +1115,7 @@ class MainWindow(QMainWindow):
         self.monitor_timer.stop()
         self.progress.setValue(100 if rows else 0)
         self.monitor_labels["status"].setText(self.i18n.t("status_completed"))
-        self.plot_service.generate_all(self.current_results_root)
+        self.plot_service.generate_all()
         self.refresh_results_assets()
         if self.report_service.available():
             self.refresh_report_assets()

@@ -94,6 +94,11 @@ class RunService:
         # but the user may override them.  Normalize without forcing preset values.
         data = self.config_model.normalize(config_data)
         data = self._with_mixing_assumption(data, scheme)
+        # Apply case preset process switches and duration to the generated config.
+        preset_name = data.get("case_preset", "")
+        preset = CASE_PRESETS.get(preset_name) if preset_name else None
+        if preset is not None:
+            data = self._with_case_preset(data, preset)
         config_path = self.generated_root / f"{case_name}_{scheme.lower()}.cfg"
         runtime_config_relpath = self._runtime_config_relpath(case_name, scheme)
         runtime_config_path = self.runtime_dir / runtime_config_relpath
@@ -153,6 +158,7 @@ class RunService:
         wallclock = time.perf_counter() - start
         self._collect_runtime_outputs(prepared, wallclock)
         result = self.summarize_run(Path(prepared["run_root"]))
+        returncode = self._effective_returncode(returncode, prepared)
         result.update(
             {
                 "case_name": prepared["case_name"],
@@ -534,6 +540,30 @@ class RunService:
         if existing:
             entries.append(existing)
         env["LD_LIBRARY_PATH"] = ":".join(entries)
+
+    _FATAL_LOG_PATTERNS: list[str] = [
+        "non conservation",
+        "negatif",
+        "IEEE_INVALID_FLAG",
+        "IEEE_DIVIDE_BY_ZERO",
+        "STOP",
+    ]
+
+    def _effective_returncode(self, raw_returncode: int, prepared: dict[str, Any]) -> int:
+        if raw_returncode != 0:
+            return raw_returncode
+        log_path = Path(prepared.get("log_path", ""))
+        if not log_path.exists():
+            return raw_returncode
+        try:
+            text = log_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return raw_returncode
+        lower = text.lower()
+        for pattern in self._FATAL_LOG_PATTERNS:
+            if pattern.lower() in lower:
+                return -1
+        return raw_returncode
 
     def _reset_runtime_outputs(self) -> None:
         result_dir = self.runtime_dir / "RESULT"

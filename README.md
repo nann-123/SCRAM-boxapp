@@ -142,14 +142,15 @@ a Python 3.10+ interpreter.
 Run the standard smoke suite on Windows with:
 
 ```bat
-.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\student_standard_tests
+.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\standard_tests
 ```
 
 ## GUI workflow
 
 1. Open the app and choose `中文` or `English`.
 2. Start from the default Greater Paris full-dynamics template or load a saved `.cfg`.
-3. Pick a reference template:
+3. Pick a reference template from the dropdown or load a custom `.cfg` via the
+   "Load Config" button on the experiment tab. Available templates:
    - minimal BC + sulfate teaching case
    - GMD hazy condensation validation
    - GMD hazy coagulation + condensation validation

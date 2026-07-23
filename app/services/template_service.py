@@ -20,7 +20,7 @@ TEMPLATES: list[dict[str, Any]] = [
             "case_preset": "coag_only",
             "mixing_assumption": "EXTERNAL_MIXING",
             "mapping_scheme": "DETERMINISTIC_NEAREST",
-            "scalars": {"tag_external": 0},
+            "scalars": {"tag_external": 0, "tagrho": 0},
         },
     },
     {

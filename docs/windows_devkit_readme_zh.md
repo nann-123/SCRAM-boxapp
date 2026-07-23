@@ -238,7 +238,7 @@ scripts\run_app_windows.bat
 每次修改代码后，至少运行一次标准测试：
 
 ```powershell
-.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\student_standard_tests
+.\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\standard_tests
 ```
 
 测试会检查：
@@ -255,7 +255,7 @@ scripts\run_app_windows.bat
 测试输出在：
 
 ```text
-install_logs\student_standard_tests\
+install_logs\standard_tests\
 ```
 
 测试成功时终端会看到类似：
