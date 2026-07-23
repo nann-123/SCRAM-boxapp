@@ -149,8 +149,6 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         actions = [
             ("new_experiment", self.new_from_defaults),
-            ("load_experiment", self.load_config),
-            ("save_experiment", self.save_config),
             ("run", self.run_single_case),
             ("stop", self.stop_run),
             ("view_results", lambda: self.tabs.setCurrentWidget(self.results_tab)),
@@ -199,6 +197,7 @@ class MainWindow(QMainWindow):
         for template in self.template_service.list_templates():
             label = template["name_zh"] if self.i18n.language.startswith("zh") else template["name_en"]
             self.template_combo.addItem(label, template["id"])
+        self.template_combo.addItem(self.i18n.t("custom_config"), "__custom__")
         self.template_combo.currentTextChanged.connect(lambda _text: self._update_template_description())
         self.load_template_button = QPushButton(self.i18n.t("load_template"))
         self.load_template_button.clicked.connect(self.load_template)
@@ -214,7 +213,9 @@ class MainWindow(QMainWindow):
         self.case_preset_combo.currentTextChanged.connect(self.apply_case_preset)
         self.mapping_scheme_combo = QComboBox()
         self.mapping_scheme_combo.addItems(["INTERNAL_MIXING", "EXTERNAL_MIXING"])
-        self.mapping_scheme_combo.currentTextChanged.connect(self._sync_visibility)
+        self._mixing_scheme_locked = ""
+        self.mapping_scheme_combo.currentIndexChanged.connect(self._on_mixing_scheme_changed)
+        self.mapping_scheme_combo.setToolTip(self.i18n.t("mixing_scheme_readonly_tip"))
         self.coefficient_file_edit = QLineEdit()
         coeff_browse = QPushButton(self.i18n.t("browse"))
         coeff_browse.clicked.connect(self.choose_coefficient_file)
@@ -228,6 +229,9 @@ class MainWindow(QMainWindow):
         scheme_detail_layout.setContentsMargins(0, 0, 0, 0)
         scheme_detail_layout.addRow(self.i18n.t("coefficient_file"), coeff_row)
         experiment_form.addRow(self.i18n.t("experiment_name"), self.experiment_name_edit)
+        exp_hint = QLabel(self.i18n.t("experiment_name_hint"))
+        exp_hint.setStyleSheet("color: #999; font-size: 10px; padding-left: 2px;")
+        experiment_form.addRow("", exp_hint)
         experiment_form.addRow(self.i18n.t("template_preset"), template_row)
         experiment_form.addRow(self.i18n.t("template_note"), self.template_description)
         experiment_form.addRow(self.i18n.t("case_preset"), self.case_preset_combo)
@@ -635,8 +639,15 @@ class MainWindow(QMainWindow):
                 self.template_combo.setCurrentIndex(idx)
                 break
         self._update_template_description()
-        self.case_preset_combo.setCurrentText(str(self.data.get("case_preset", "coag_only")))
-        self.mapping_scheme_combo.setCurrentText(str(self.data.get("mixing_assumption", "EXTERNAL_MIXING")))
+        self.case_preset_combo.blockSignals(True)
+        matched = self.data.get("case_preset") or ""
+        idx = self.case_preset_combo.findText(matched)
+        self.case_preset_combo.setCurrentIndex(idx if idx >= 0 else -1)
+        self.case_preset_combo.blockSignals(False)
+        self._mixing_scheme_locked = str(self.data.get("mixing_assumption", "EXTERNAL_MIXING"))
+        self.mapping_scheme_combo.blockSignals(True)
+        self.mapping_scheme_combo.setCurrentText(self._mixing_scheme_locked)
+        self.mapping_scheme_combo.blockSignals(False)
         self.with_coag_box.setChecked(bool(int(scalars["with_coag"])))
         self.with_cond_box.setChecked(bool(int(scalars["with_cond"])))
         self.with_nucl_box.setChecked(bool(int(scalars["with_nucl"])))
@@ -825,6 +836,10 @@ class MainWindow(QMainWindow):
         emission_matrix = data.get("emission_matrix", [])
         n_species = len(species)
         n_bins = len(data["init_bin_number"])
+        # Remove stale cell widgets before resizing (fixes +/- button residue from previous n_bins)
+        for r in range(self.emission_table.rowCount()):
+            for c in range(self.emission_table.columnCount()):
+                self.emission_table.removeCellWidget(r, c)
         self.emission_table.setRowCount(n_species)
         self.emission_table.setColumnCount(n_bins + 2)
         headers = [self.i18n.t("species_label")] + [f"bin_{idx + 1}" for idx in range(n_bins)] + [self.i18n.t("actions")]
@@ -928,10 +943,27 @@ class MainWindow(QMainWindow):
         template_id = str(self.template_combo.currentData())
         self.data = self.template_service.load_template(template_id)
         self.data["experiment_name"] = template_id
+        self.data["case_preset"] = self._match_case_preset(self.data)
         self.settings["last_template"] = template_id
         self.settings_service.save(self.settings)
         self.refresh_all()
 
+    def _match_case_preset(self, data: dict[str, Any]) -> str:
+        """Match process switches to the closest CASE_PRESETS entry."""
+        scalars = data["scalars"]
+        c, d, n = int(scalars["with_coag"]), int(scalars["with_cond"]), int(scalars["with_nucl"])
+        for name, preset in CASE_PRESETS.items():
+            if int(preset["with_coag"]) == c and int(preset["with_cond"]) == d and int(preset["with_nucl"]) == n:
+                return name
+        return ""
+
+    def _on_mixing_scheme_changed(self, _index: int) -> None:
+        """Revert any manual change to the mixing assumption combo."""
+        if self._mixing_scheme_locked and self.mapping_scheme_combo.currentText() != self._mixing_scheme_locked:
+            self.mapping_scheme_combo.blockSignals(True)
+            self.mapping_scheme_combo.setCurrentText(self._mixing_scheme_locked)
+            self.mapping_scheme_combo.blockSignals(False)
+            self.statusBar().showMessage(self.i18n.t("mixing_scheme_readonly_tip"), 5000)
     def apply_case_preset(self, case_name: str) -> None:
         preset = CASE_PRESETS.get(case_name)
         if not preset:
@@ -951,6 +983,8 @@ class MainWindow(QMainWindow):
         self.current_config_path = Path(path_text)
         self.data = self.config_model.parse(self.current_config_path)
         self.data["experiment_name"] = self.current_config_path.stem
+        self.data["case_preset"] = self._match_case_preset(self.data)
+        self.data["template_name"] = "__custom__"
         recent = [path_text] + [str(item) for item in self.settings.get("recent_configs", []) if str(item) != path_text]
         self.settings["recent_configs"] = recent[:8]
         self.settings_service.save(self.settings)
@@ -984,6 +1018,7 @@ class MainWindow(QMainWindow):
     def new_from_defaults(self) -> None:
         self.data = self.template_service.load_template("gmd_paris_full")
         self.data["experiment_name"] = "gmd_paris_full"
+        self.data["case_preset"] = self._match_case_preset(self.data)
         self.settings["last_template"] = "gmd_paris_full"
         self.settings_service.save(self.settings)
         self.refresh_all()
@@ -1039,13 +1074,20 @@ class MainWindow(QMainWindow):
         if errors:
             QMessageBox.warning(self, self.i18n.t("validate_config"), "\n".join(errors))
             return
-        self.current_results_root.mkdir(parents=True, exist_ok=True)
-        self.plot_service.set_results_root(self.current_results_root)
-        self.report_service.set_results_root(self.current_results_root)
-        case_name = self.case_preset_combo.currentText()
+        mode_dir = "compare" if compare else "single"
+        exp_name = self.experiment_name_edit.text().strip() or "experiment"
+        case_name = self.case_preset_combo.currentText().strip()
+        dir_name = f"{exp_name}_{case_name}" if case_name else exp_name
+        output_root = self.current_results_root / mode_dir / dir_name
+        output_root.mkdir(parents=True, exist_ok=True)
+        self.plot_service.set_results_root(output_root)
+        self.report_service.set_results_root(output_root)
+        # Auto-save current config alongside the results
+        auto_cfg = output_root / "experiment_config.cfg"
+        self.config_model.serialize(self.data, auto_cfg)
         schemes = ("INTERNAL_MIXING", "EXTERNAL_MIXING") if compare else (self.mapping_scheme_combo.currentText(),)
         prepared_runs = [
-            self.run_service.prepare_run(self.data, case_name, scheme, output_root=self.current_results_root) for scheme in schemes
+            self.run_service.prepare_run(self.data, case_name, scheme, output_root=output_root) for scheme in schemes
         ]
         self.run_worker = RunWorker(self.run_service, prepared_runs)
         self.run_worker.stage_changed.connect(self._on_run_stage_changed)
@@ -1262,6 +1304,9 @@ class MainWindow(QMainWindow):
 
     def _update_template_description(self) -> None:
         template_id = str(self.template_combo.currentData())
+        if template_id == "__custom__":
+            self.template_description.setText(self.i18n.t("custom_config_desc"))
+            return
         template = self.template_service.template_by_id(template_id)
         text = template["description_zh"] if self.i18n.language.startswith("zh") else template["description_en"]
         self.template_description.setText(text)
@@ -1277,15 +1322,20 @@ class MainWindow(QMainWindow):
 一、软件定位
 本软件用于把 SCRAM box model 封装成可直接操作的桌面程序，重点比较 internal mixing 与 external mixing 两种气溶胶混合状态假设。internal mixing 把同一粒径段的颗粒看作平均组成；external mixing 继续区分不同组成区间，因此可以分析 mixed / unmixed 颗粒比例和组成差异。
 
-二、顶部工具栏
+二、顶部工具栏与运行
 1. 新建实验：恢复到默认教学模板。
-2. 载入实验：读取已有 cfg 并回填到 GUI。
-3. 保存实验：保存当前实验配置。
-4. 运行：运行当前选中的混合假设。
-5. 比较 internal / external：连续运行 internal mixing 与 external mixing 并生成对比图。
-6. 停止：尝试停止正在运行的核心程序。
-7. 查看结果：切换到结果分析页。
-8. 导出报告：切换到报告页并生成 PDF 报告。
+2. 运行：运行当前选中的混合假设。
+3. 停止：尝试停止正在运行的核心程序。
+4. 查看结果：切换到结果分析页。
+5. 导出报告：切换到报告页并生成 PDF 报告。
+6. 比较 internal / external：在运行监控页点击「比较」按钮，连续运行两种混合假设并生成对比图和 final_state_summary.csv。
+
+   输出归档规则：
+   - 运行结果按「实验名称_案例预设」存入 single/ 或 compare/ 子目录。
+   - 载入配置后实验名称自动设为配置文件名；运行前可手动修改。
+   - 同名实验再次运行会覆盖历史结果，请区分命名。
+   - 无论「运行」还是「比较」，都会自动保存实验配置到结果目录下的 experiment_config.cfg。
+   - 案例预设会根据载入配置的实际过程开关（凝并/冷凝/成核）自动匹配。
 
 三、实验设置页
 1. 模板/预设：选择教学案例、GMD hazy 验证案例或 Greater Paris A/B/C/D 参考场景。
@@ -1355,15 +1405,20 @@ Version: {self.app_version}
 1. Purpose
 This desktop app wraps SCRAM as a workflow-oriented GUI for comparing internal mixing and external mixing assumptions. Internal mixing uses one average composition per size bin. External mixing resolves composition sections and can therefore diagnose mixed and unmixed particle populations.
 
-2. Toolbar
+2. Toolbar and Running
 - New Experiment: reset to the default teaching template.
-- Load Experiment: import an existing cfg.
-- Save Experiment: save the current configuration.
 - Run: run the selected mixing assumption.
-- Compare internal / external: run both assumptions and generate comparison figures.
 - Stop: stop the active process.
 - View Results: open the results analysis tab.
 - Export Report: open the report tab and generate a PDF.
+- Compare internal / external: click "Compare" on the Run Monitor tab to run both assumptions and generate comparison figures and final_state_summary.csv.
+
+  Output archiving:
+  - Results are saved as 「experiment_name_case_preset」 under single/ or compare/.
+  - Loading a config sets the experiment name to the config filename; rename before running.
+  - Reusing the same experiment name overwrites previous results — use distinct names.
+  - Both Run and Compare auto-save the config as experiment_config.cfg in the output directory.
+  - The case preset is auto-matched from the loaded config's actual process switches.
 
 3. Experiment Setup
 - Template / Preset: teaching, GMD hazy validation, or Greater Paris reference cases.
