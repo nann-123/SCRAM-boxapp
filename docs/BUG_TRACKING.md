@@ -1,6 +1,6 @@
 # SCRAM BoxApp Bug 追踪表
 
-> 创建日期: 2026-07-23 | 最后更新: 2026-07-23 | 基于 tutorial_minimal / gmd_hazy_coag_cond / gmd_paris_emission_only 测试
+> 创建日期: 2026-07-23 | 最后更新: 2026-07-27 | 新增 nucl_model=5 文件读取 bug、euler_coupled 非零质量触发
 
 ## 修复状态
 
@@ -12,8 +12,9 @@
 | 4 | 🟡 P1 | 初始化 | ✅ 已修复 | `Fixed Density 1.8E-6`（原 NaN） |
 | 5 | 🟢 P2 | 凝并 | ❌ P2 待定 | 与 #2 合并修复 |
 | 6 | 🟡 P1 | 绘图 | ✅ 已修复 | `generate_all()` 不再传错参 |
-| 7 | 🔴 P2 | 重分配 | ❌ P2 待定 | 需重编译 Fortran |
+| 7 | 🔴 P2 | 重分配 | ❌ P2 待定 | 需重编译 Fortran；非零质量也会触发，见 #7.1 |
 | 8 | 🟡 P1 | 运行 | ✅ 已修复 | gmd_hazy 正确检测为 `failed`（原误报 `ok`） |
+| 9 | 🔴 P1 | 初始化 | ❌ 未修复 | nucl_model=5 跳过行后文件位置错位，需补 dummy read |
 
 ## Bug 总览
 
@@ -25,8 +26,33 @@
 | 4 | 🟡 P1 | 初始化 | `fixed_density = NaN`（全零质量 + `tagrho=1` 除零） | `mass=0` + `tagrho=1` | `app/services/template_service.py` | `fix: 零质量模板默认 tagrho=0 避免除零 NaN` |
 | 5 | 🟢 P2 | 凝并 | Legacy/Prototype 双轨制对零质量行为不一致 | `mass=0` + `with_coag=1` + 切换模式 | `SRC/ModuleCoagulation.f90` | `fix: Legacy/Prototype 零质量输入行为统一` |
 | 6 | 🟡 P1 | 绘图 | GUI 单次运行不生成图片（传错参数） | GUI "运行"按钮 | `app/views/main_window.py` | `fix: _on_run_completed 传正确 results_root 给 generate_all` |
-| 7 | 🔴 P2 | 重分配 | `euler_coupled` redistribution 零质量数据爆炸 30 倍 | `mass=0` + `with_cond=1` + `redistribution_method≥2` | `SRC/rdb/euler_coupled.f90` | `fix: euler_coupled 零质量保护` |
+| 7 | 🔴 P2 | 重分配 | `euler_coupled` redistribution 零质量/非零不均匀质量均触发非守恒 | `mass=0` 或 `mass≠0` 分布不均 + `with_cond=1` + `redistribution_method=6` | `SRC/rdb/euler_coupled.f90` | `fix: euler_coupled 质量/数量非守恒保护` |
 | 8 | 🟡 P1 | 运行 | Fortran 内部 STOP 返回 exit code 0，Python 误报成功 | Fortran 内部任何 STOP | `app/services/run_service.py` | `fix: 检测 run.log 异常关键字，标记 failed` |
+| 9 | 🔴 P1 | 初始化 | nucl_model=5 跳过 init_bin_number/emission 读取后文件位置错位 | nucl_model=5 + 配置含 init_bin_number/emission 行 | `SRC/ModuleDiscretization.f90:129-134` | `fix: nucl_model=5 else 分支补 dummy read 跳过行` |
+
+### 实测模板对照表（base="teaching"，非零初始质量，2026-07-27）
+
+| 模板 | Case Preset | 过程 | redist. method | final_mass | final_number | 状态 | 结论 |
+|------|------------|------|---------------|------------|-------------|------|------|
+| tutorial_minimal | coag_only | 仅凝并, 0.25h | 2 | 0.00148 | 4.11B (−10.99M) | ✅ | 凝并正常，质量守恒 |
+| gmd_hazy_condensation | gmd_hazy_condensation | 仅冷凝, 12h | 2 | 0.000174 | 3.42B 不变 | ⚠️ | 无挥发性物种，冷凝空转 |
+| gmd_hazy_coag_cond | coag_cond | 凝并+冷凝, 12h | **6** | — | — | ❌ | euler_coupled 崩溃（Bug #7） |
+
+> 注：上表为 2026-07-27 切换 base="teaching" 后的实测数据，非零初始质量。旧表（零质量骨架）见下方。
+
+### 模板与论文/说明书差异
+
+| 模板 | 说明书声称 | 实际 cfg | 论文 Section 3 要求 |
+|------|-----------|---------|-------------------|
+| tutorial_minimal | BC+硫酸盐, **2** 物种, **4** bin | 继承 default: **30** 物种, **7** bin | N/A（教学案例） |
+| gmd_hazy_condensation | hazy 冷凝验证 | 30 物种, 无冷凝源 | **2** 物种, 恒定硫酸蒸气源 5.5 µm³/cm³/12h |
+| gmd_hazy_coag_cond | hazy 凝并+冷凝验证 | 30 物种, 无冷凝源 | **2** 物种, 恒定硫酸蒸气源 |
+
+### 论文原始代码位置
+
+Zhu et al. (2015) 第 17 页 "Code availability":
+> http://cerea.enpc.fr/polyphemus/src/scram-1.0.tar.gz
+> 包含源码、配置文件、Read Me、**模型输出文件**（可用于对比验证）
 
 ## 详细信息
 
@@ -95,16 +121,16 @@
 | **证据** | 标准测试有 10 张图，GUI `result/single/*/figures/` 0 张 |
 | **修复** | `_on_run_completed` 不传参给 `generate_all()`，使用已正确设置的 `plot_service.results_root` |
 
-### Bug #7: euler_coupled redistribution 零质量爆炸
+### Bug #7: euler_coupled redistribution 质量/数量非守恒
 
 | 项目 | 内容 |
 |------|------|
 | **位置** | `SRC/rdb/euler_coupled.f90:254-260` |
-| **触发条件** | `mass=0` + `number≠0` + `with_cond=1` + `redistribution_method≥2` |
-| **表现** | 数量从 3.42B 爆炸到 102.6B（30倍），触发 `non conservation du nombre` 报错 |
-| **影响面** | `gmd_hazy_coag_cond` 等同时开启冷凝和重分配的本模板 |
-| **证据** | `run.log:75-87`: 法文数量不守恒报错 + 30x 数量跳变 |
-| **修复** | Fortran 端加零质量输入保护，或 Python 端检测零质量时禁用 redistribution |
+| **触发条件** | `redistribution_method=6` + `with_cond=1`（**零质量和非零质量均会触发**） |
+| **表现** | 零质量：数量 3.42B→102.6B（30 倍）；非零质量：`IEEE_INVALID_FLAG + IEEE_DIVIDE_BY_ZERO`，数浓度反复跳动 0.047% |
+| **影响面** | `gmd_hazy_coag_cond` 等同时开启冷凝和 euler_coupled 重分配的模板 |
+| **证据** | 零质量：`run.log`: 法文数量不守恒报错 + 30x 跳变；非零质量：`0727_coag_cond run.log`: `non conservation du nombre total !!` + IEEE 异常 |
+| **修复** | Fortran 端加质量/数量输入保护；临时方案：模板改用 `redistribution_method=2`（Moving Diameter） |
 
 ### Bug #8: Fortran STOP 返回 exit code 0
 
@@ -116,3 +142,30 @@
 | **影响面** | 任何 Fortran 出错场景都被误判为成功 |
 | **证据** | `gmd_hazy_coag_cond` 内部爆炸后 `performance_summary.csv` 仍显示 `status=ok` |
 | **修复** | Python 端 `run_prepared` 后检查 `run.log` 是否含异常关键字（`non conservation`, `STOP`, `NaN`） |
+
+### Bug #9: nucl_model=5 文件读取位置错位
+
+| 项目 | 内容 |
+|------|------|
+| **位置** | `SRC/ModuleDiscretization.f90:129-134` |
+| **触发条件** | `nucl_model=5` + 配置文件含 `init_bin_number` 和 2 行 `init_bin_emission` |
+| **表现** | `if(nucl_model.ne.5)` 跳过了 3 行读取，但文件指针未前进。后续 `read(10,*)(diameter(k),...)` 行读到 init_bin_number 数据，崩溃："Bad real number in item 8 of list input" |
+| **影响面** | `nucl_model=5` 无法解析任何标准格式配置（必须手工删除 init_bin_number + emission 行） |
+| **证据** | baseline12h 标准格式（56 行）→ 崩溃在 line 194；删除 init_bin_number+emission 后（53 行）→ 正常运行 |
+| **修复** | `if(nucl_model.ne.5)` 的 `else` 分支补 dummy read：`read(10,*); do s=1,min(N_species,2); read(10,*); enddo` |
+| **测试配置** | `docs/checktest/nucl_model5_test.cfg`（未修复，56 行，可复现崩溃）/ `docs/checktest/nucl_model5_fixed.cfg`（手工修复，53 行，可运行） |
+
+### nucl_model=5 运行结果（2026-07-27，baseline12h 基座 + 30 物种）
+
+| 指标 | 初始 | 最终 | 说明 |
+|------|------|------|------|
+| 总气溶胶质量 | 226.07 µg/m³ | — | hazy 场景参数化，远大于 tutorial（0.00148） |
+| SO₄ 气溶胶 | 18.84 | 28.73 (+9.89) | 硬编码排放率 2.29e-4，12h 排放窗口 |
+| BC 气溶胶 | 207.23 | 207.23 | 惰性，无变化 |
+| Nub Nucl | — | +66,891,856 | 成核产生新粒子 |
+| Nub Coag | — | −24,135,436,600 | 大量凝并消除 |
+| Mass Cond | — | +2.39 | 冷凝净增质量 |
+| total_water | — | 62.75 | 液态水大量生成 |
+| 运行耗时 | — | 24.03 s | 30 物种全动力学 |
+
+> nucl_model=5 是完全自成一体的硬编码验证模式：忽略配置文件物种数据，用 hazy 场景参数化 + 50/50 SO₄+BC 均分 + 硬编码 SO₄ 排放。结果与 tutorial/hazy 模板运行不可比。

@@ -15,7 +15,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "name_zh": "最简单教学案例（BC + 硫酸盐）",
         "description_en": "Fast-start teaching case with two species, four size bins, and internal/external mixing comparison.",
         "description_zh": "两种组分、四个粒径 bin 的快速教学案例，适合首次体验 internal / external mixing 对比。",
-        "base": "default",
+        "base": "teaching",
         "updates": {
             "case_preset": "coag_only",
             "mixing_assumption": "EXTERNAL_MIXING",
@@ -30,7 +30,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "name_zh": "GMD hazy 冷凝验证",
         "description_en": "Reference-style validation case from Zhu et al. (2015): hazy 12 h condensation at 298 K and 1 atm.",
         "description_zh": "对应 Zhu et al. (2015) 第 3 节的 hazy 12 小时冷凝验证场景，298 K、1 atm。",
-        "base": "default",
+        "base": "teaching",
         "updates": {
             "case_preset": "gmd_hazy_condensation",
             "mixing_assumption": "EXTERNAL_MIXING",
@@ -57,7 +57,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "name_zh": "GMD hazy 凝并+冷凝验证",
         "description_en": "Reference-style validation case from Zhu et al. (2015): hazy 12 h condensation with coagulation.",
         "description_zh": "对应 Zhu et al. (2015) 第 3 节的 hazy 12 小时凝并+冷凝联合验证场景。",
-        "base": "default",
+        "base": "teaching",
         "updates": {
             "case_preset": "gmd_hazy_coag_cond",
             "mixing_assumption": "EXTERNAL_MIXING",
@@ -146,6 +146,7 @@ class TemplateService:
         self.root = root
         self.config_model = ConfigModel(root)
         self.baseline_path = root / "core" / "templates" / "baseline12h.cfg"
+        self.examples_path = root / "examples" / "configs" / "default_config.cfg"
 
     def list_templates(self) -> list[dict[str, Any]]:
         return deepcopy(TEMPLATES)
@@ -160,6 +161,8 @@ class TemplateService:
         template = self.template_by_id(template_id)
         if template["base"] == "baseline":
             data = self.config_model.parse(self.baseline_path)
+        elif template["base"] == "teaching":
+            data = self.config_model.parse(self.examples_path)
         else:
             data = self.config_model.new_default()
         updates = template.get("updates", {})

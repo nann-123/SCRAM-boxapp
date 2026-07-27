@@ -38,3 +38,6 @@ core/executables_or_wrappers/runtime/*/source/**/ProgramSCRAM.exe
 *.tmp
 *.bak
 *~
+
+# ZCode agent workspace
+.zcode/
