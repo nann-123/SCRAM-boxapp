@@ -181,15 +181,28 @@ contains
   subroutine coeff_make_dir(path)
     implicit none
     character(len=*), intent(in) :: path
-    character(len=512) :: path_win
+    character(len=512) :: path_native
     character(len=1100) :: command
+    character(len=64) :: os_name
+    logical :: is_windows
     integer :: i
 
-    path_win = trim(path)
-    do i = 1, len_trim(path_win)
-      if (path_win(i:i) == '/') path_win(i:i) = '\'
-    enddo
-    command = 'cmd /c if not exist "' // trim(path_win) // '" mkdir "' // trim(path_win) // '"'
+    ! Directory creation goes through the shell, so the command differs by
+    ! platform: cmd's mkdir on Windows, mkdir -p on POSIX.
+    os_name = ''
+    call get_environment_variable('OS', os_name)
+    if (len_trim(os_name) == 0) call get_environment_variable('windir', os_name)
+    is_windows = (index(os_name, 'Windows') > 0) .or. (index(os_name, 'windows') > 0)
+
+    path_native = trim(path)
+    if (is_windows) then
+      do i = 1, len_trim(path_native)
+        if (path_native(i:i) == '/') path_native(i:i) = '\'
+      enddo
+      command = 'cmd /c if not exist "' // trim(path_native) // '" mkdir "' // trim(path_native) // '"'
+    else
+      command = 'mkdir -p "' // trim(path_native) // '"'
+    end if
     call execute_command_line(trim(command))
   end subroutine coeff_make_dir
 
