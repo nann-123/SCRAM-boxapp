@@ -7,6 +7,18 @@
 
 # Required includes : ops, seldon, talos
 # Make symbolic links to the path of each required include in the include directory.
+#
+# SCRAMBoxApp note: ops, seldon and talos are vendored directly inside this
+# include/ directory and shipped with the repository, so the symbolic links
+# described above are no longer needed. Each vendored directory carries an
+# ORIGIN.txt file recording its upstream source, version and license. The
+# example/ directory is shipped with the repository as well (see
+# example/ORIGIN.txt).
+#
+# SCRAMBoxApp note: platform split — this module is compiled as part of the SCRAM core on Linux
+# (`scripts/linux/build_runtime.sh`, used by automated scheduled troubleshooting) and is packaged
+# as-is on Windows (manual development, verification/review, release). See the repository README,
+# section "Development and debugging".
 
 #
 # Compilation

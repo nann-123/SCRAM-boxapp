@@ -1,0 +1,9 @@
+*.o
+*.os
+*.so
+*.cc
+*.pyc
+*.scon*
+config.log
+*~
+.gitignore

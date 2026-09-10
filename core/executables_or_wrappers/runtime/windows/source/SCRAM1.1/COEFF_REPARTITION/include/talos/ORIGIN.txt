@@ -1,0 +1,308 @@
+ORIGIN — Talos: Miscellaneous C++ Utilities
+===========================================
+
+Author:     Vivien Mallet <Vivien.Mallet@inria.fr>
+License:    GNU GPL v2 or later (see "license" file in this directory)
+Origin:     git repository at Debry@canis01:gitroot/Talos
+Version:    commit cd9634ba4f16d54c95ce77620dd0b9f7bce4f848 (Talos 1.2.1+)
+Date:       2010
+
+Description
+-----------
+Talos is a C++ library of miscellaneous tools that make up for C++ lacks
+and ease C++ programming: date and time handling, file and string
+utilities, and stream/configuration parsing, with SWIG bindings for
+Python. It is a required include of the COEFF_REPARTITION module.
+
+Copyright (C) 2004-2007, INRIA. Author(s): Vivien Mallet.
+
+Original repository history (162 commits)
+------------------------------------------
+  cd9634b Changed version number from 1.2.1 to 1.2.1+.
+  6105e32 Updated files "history" and "version" for version 1.2.1.
+  43bf789 Updated the copyrights.
+  e06ce05 Initial import of ".gitignore".
+  e57fbf6 Changed version number for Talos from 1.2 to 1.2a.
+  3534576 Updated files "version" and "history".
+  b466114 Added 'bool ConfigStream::GetElement(T&)'.
+  9041c97 Fixed a bug in 'ExtStream' and 'ConfigStreams': a floating-point
+           number could be accepted as an integral value.
+  18619d2 Added support for the constraints '!= x y z' and '= x y z' in
+           'satisfies_constraint' and in related methods.
+  21e7370 Added support for the constraint 'integer' in 'satisfies_constraint'
+           and in related methods.
+  d4d46a8 Overloaded 'is_integer' for 'char*' and 'const char*', which may
+           adequately shadow the Blitz++ template function 'is_integer'.
+  3fdd426 Added in 'ExtStream' and 'ConfigStreams' the methods
+           'GetValue(string name, string constraints, T& value)' and
+           'PeekValue(string name, string constraints, T& value)', which check
+           that a numerical value read in a configuration file satisfies a
+           list of constraints.
+  cd36865 Added, in 'ExtStream' and 'ConfigStreams', 'GetValue(string name,
+           string accepted, string& value, string delimiter)' and
+           'PeekValue(string name, string accepted, string& value, string
+           delimiter)', which check that the value read in the configuration
+           file is in a list of accepted values.
+  3678fdd Added 'GetValue(string name, T min, T max, T& value)' and
+           'PeekValue(string name, T min, T max, T& value)' to 'ExtStream' and
+           'ConfigStreams'.
+  8c99e81 ---
+  38a3067 Improved the SWIG interface with support of exceptions.
+  b298255 ---
+  2ec4474 Methods 'ExtStream::GetValue(string, T&)',
+           'ExtStream::PeekValue(string, T&)',
+           'ConfigStreams::GetValue(string, T&)',
+           'ConfigStreams::PeekValue(string, T&)' and their overloads now
+           return nothing and raise an exception in case of problem, instead
+           of returning a Boolean.
+  ed46c4c Slightly modified the code to avoid SWIG warnings.
+  dacb90a ---
+  5c53143 'ExtStream::GetValue(string, T&)', 'ExtStream::PeekValue(string,
+           T&)' and 'ConfigStreams::GetValue(string, T&)' now try to get or
+           peek the element immediately following the entry, even if they
+           search for a number.
+  ab284d0 Completed the reorganization of the code to split the declarations
+           from the definitions.
+  26e79fd ---
+  ea79b93 Put an initialization to the usual delimiters in the default
+           constructor of 'ExtStream'.
+  390dddf Removed a useless statement.
+  eb174c0 Initial import of SWIG files for Talos.
+  1b69589 Reorganized the includes in order to be compatible with SWIG.
+  aae4c72 ---
+  5a29729 Changed version number for Talos from 1.1 to 1.1a.
+  bb7ee13 Updated "version" and "history".
+  ab80d08 Added default delimiters to improve portability.
+  421964a Updated copyright and header.
+  9874e0e ---
+  073a84c ---
+  081b9ec Fixed a bug: when a string contained a date, it was considered as a
+           date, which leads to errors when parsing arguments of a
+           preprocessing program.
+  7f959cd Cleaned up the code to follow Polyphemus conventions, with trailing
+           spaces removed and no character beyond the column #78.
+  3070fb3 Added 'ostream& operator << (ostream&, const Date&)'.
+  4e218d3 Changed version number for Talos from 1.0 to 1.0a.
+  70c090d Updated 'history' and 'version'. Changed version number from 0.4a to
+           1.0.
+  b0c032d Improved comments for Doxygen.
+  2565f9e Improved error messages in 'ConfigStream' in case the end of file is
+           reached.
+  8d5407e 1) Improved error messages from 'ConfigStream' and 'ConfigStreams'.
+           2) Methods 'ConfigStream::Find' and 'ConfigStreams::Find' now
+           search for an element in the current section only (if a section has
+           been set). 3) Added the protected method
+           'ConfigStreams::FileNames()'.
+  372eb96 Improved 'ConfigStreams': in case a searched string is not found in
+           the right section, the error message includes the string name (not
+           only the section name).
+  d2d2104 Added fuction GetOrdinalDay in Date.hxx
+  1936784 Added function GetOrdinalDay: returns the ordinal number of the day
+           in the year between 1 and 366.
+  da47304 Added the possibility to use an interval length of the form "Md" for
+           M days in preprocessing.
+  4d78768 Major changes on preprocessing programs. Please launch the programs
+           without arguments to see how they are used now.
+  2505359 ---
+  362d25a Improved the portability by adding new default delimiters : the
+           carriage return sequence ('\r') and the corresponding ASCII control
+           sequence of '\r\n' in binary mode.
+  e1d126b Changed version number from 0.4 to 0.4a.
+  c8d51e0 ---
+  0fd25e9 Updated history and version. Changed version number from 0.3 to 0.4.
+  ce36c97 Fixed a bug: 'ConfigStreams::Find' and
+           'ConfigStreams::FindFromBeginning' did not work in case a markup
+           was defined in one file and used in another file.
+  eaaf2e4 Methods 'ExtStream::ExtStream(string, string, string)' and
+           'ExtStream::Open(string, openmode)' now check that the file has
+           been opened.
+  dd226bc Added comparison operators <, <=, >, >=, == and != on dates.
+  1fcceae Fixed a bug: in ConfigStream, markups were not replaced in all
+           cases.
+  66aa511 Fixed a bug: subtracting n seconds where n is a multiple of 60 did
+           not work.
+  4bd7528 Fixed a bug: 'ConfigStreams::Find*' did not work at all with
+           multiple files.
+  96a785e Seconds are now saved in a double precision variable (instead of an
+           integer).
+  056d9ae Added 'Date::Date(string date)', 'Date::operator=(string date)' and
+           'Date::SetDate(string date)'. Also added the private method
+           'Date::IsValid()'.
+  1ce5b20 Added the ability to deal with sections in configuration files.
+  a4d72f5 'convert(const string& s, bool& out)' now checks that the string can
+           be converted safely, unless 'TALOS_DO_NOT_CHECK_BOOLEAN' is set.
+  0227be8 Added 'Date::GetSecondsFrom'.
+  c1c6e9d Fixed a bug: 'good()' has been replaced with '!is_empty()' whenever
+           EOF is not detected.
+  cd92f84 In 'ExtStream' and 'ConfigStream', the files are now opened in
+           binary mode so that, under MS Windows, 'tellg' may not change the
+           position in the stream.
+  c1cf6c9 Updated copyright.
+  ee00f42 Changed the default alignment in 'fill' and 'to_str_fill' from right
+           to left.
+  9619653 Added 'Date::operator=(const Date&)'.
+  d6642fe Added a copy constructor for 'Date'.
+  cafb102 Fixed a bug in 'Date::Adjust': negative months were not properly
+           handled.
+  af8686b 1) Changed 'fill(const string&, char, int, fmtflags)' into
+           'fill(const string&, int, char, fmtflags)'. 2) Split properly
+           declarations and definitions.
+  a924b08 Changed version number from 0.3 to 0.3a.
+  4cd73e0 Changed version number from 0.2a to 0.3.
+  bb4f479 Added file "history".
+  0c83baf ---
+  2e2fff4 ---
+  bfeb96c ---
+  8b37675 1) Added 'ExtStream::GetRawElement'. 2) Fixed a bug:
+           'ExtStream::Find' now calls 'ExtStream::GetRawElement' instead of
+           'ExtStream::GetElement' to avoid markup substitution in derived
+           classes.
+  ace58aa Improved 'ConfigStreams::GetLine' to allow markup substitution over
+           all the files.
+  a4600c2 ---
+  8b1e5ca Improved 'ConfigStreams::GetElement' to allow markup substitution
+           over all the files.
+  95da486 Added an exception raise in case where a markup cannot be replaced
+           with its value (not found).
+  ae34b3d Added 'ConfigStreams::GetRawLine' and
+           'ConfigStreams::GetRawElement'.
+  6194bf1 Added 'ConfigStreams::AddFile'.
+  c68c2c1 'Find' now launches an exception in case where the element is not
+           found.
+  cfc006c Added 'ConfigStreams'.
+  4911f0a 'GetLine' is now virtual in 'ExtStream' and redefined in
+           'ConfigStream' so that 'GetLine' should replace markups in
+           'ConfigStream'.
+  392a8df Fixed a bug: 'ifstream::clear' should be called before
+           'ifstream::seekg'.
+  e5e44c2 'ExtStream' now launches an exception if an element is not found,
+           except in methods 'Find' and 'FindFromBeginning'.
+  1120745 Added 'TRY' and 'END'.
+  8734cac Fixed a bug in 'Adjust': negative seconds and minutes were not well
+           handled.
+  752383e Added 'lower_case' and 'upper_case'.
+  12f644b ---
+  2f9e6d7 Added 'Date::GetWeekDay'.
+  3409703 Added 'ExtStream::IsEmpty'.
+  7173dcc Added 'print(const vector<T>&)'.
+  6b41a36 ---
+  a97bb22 Added a default constructor to 'Date'.
+  53e9771 Added 'ExtStream::FindFromBeginning'.
+  fe55cb2 1) Added the ability to deal with markups with 'ConfigStream'. 2)
+           Added 'ConfigStream::SetMarkupTags' and
+           'ConfigStream::GetMarkupTags'.
+  6ce5766 1) Added 'string ExtStream::GetValue(string)' and 'string
+           ExtStream::PeekValue(string)'. 2) Improved
+           'ExtStream::PeekElement'.
+  d9e5dd5 ---
+  d075486 Added 'split_markup'.
+  f0bfeb2 ---
+  a2b7a4e Added 'ExtStream::GetValue(string name, bool& value)' and
+           'ExtStream::PeekValue(string name, bool& value)'.
+  1d8a5de Added 'convert(const string& s, bool& out)'.
+  e72a44d Added 'string fill(const string& input, int l = 2, char c = ' ',
+           ios_base& pos(ios_base&) = left)'.
+  a65e48c ---
+  2f24f6d Added 'GetNumberOfDays', 'GetNumberOfHours', 'GetNumberOfMinutes'
+           and 'GetNumberOfSeconds'.
+  c63db95 ---
+  f0ac1a9 ---
+  875230c Added 'SkipFullLines', 'SkipLines', 'SkipElements' and
+           'SkipNumbers'.
+  309c421 Changed version number from 0.2 to 0.2a.
+  86f7f5b Changed version number from 0.1a to 0.2.
+  ba0c83c ---
+  4e889b0 ---
+  ed8e3f5 Fixed a bug in 'string Date::GetDate(const string& format) const'.
+  cf57547 Added 'GetDayNumber' and 'GetDaysFrom'.
+  ded4f04 ---
+  4e6ba5a Added 'ConfigStream'.
+  13288e9 Renamed 'ConfigStream' into 'ExtStream'.
+  a0286e1 ---
+  1be2a07 Fixed a bug: strings were not correctly split.
+  a26ea99 Fixed a bug in 'split': delimiters are now excluded from extracted
+           elements.
+  f67d4bf Added 'vector<string> split(string str, string delimiters)'.
+  2e8dccb ---
+  4e11199 ---
+  e3b25a1 Added 'convert'.
+  110a1fd Added 'split(string, vector<T>&, string)'.
+  41a981e Added 'trim', 'trim_beg' and 'trim_end'.
+  03e1588 Added 'string find_replace(string, string, string)'.
+  ac909f3 ---
+  ed895fe ---
+  866c58e Added 'ConfigStream& ConfigStream::Skip'.
+  9624d65 Added '\n' in delimiters.
+  c7d86b1 Added 'ConfigStream::SkipDiscarded'.
+  617dffe Renamed 'void ConfigStream::SkipDelimiters()' into 'ConfigStream&
+           ConfigStream::SkipDelimiters()'.
+  86da8b2 Added 'bool has_element(istream&)'.
+  fc66cb5 Added 'bool is_empty(istream&)'.
+  08926af Added class 'Date'.
+  efbe7a6 Added 'to_str_fill'.
+  cf7c6f7 ---
+  23a3e34 Added 'ConfigStream::SkipDelimiters' and
+           'ConfigStream::RemoveDelimiters'.
+  c340de8 Added 'ConfigStream::Find'.
+  949ec98 ---
+  03becf9 Added 'ConfigStream::GetLine' and 'ConfigStream::PeekLine'.
+  0273d52 Renamed 'ConfigStream::*Line' into 'ConfigStream::*FullLine'.
+  61bf95a Added 'ConfigStream::Rewind' and 'ConfigStream::GetValue'.
+  2a48883 Added 'ConfigStream::GetNumber' and 'ConfigStream::PeekNumber'.
+  4c79f4a ---
+  d2f7c2b ---
+  05ab3d5 Added 'is_num', 'is_integer' and 'is_unsigned_integer'.
+  fdc6d5c Added 'file_size' and 'stream_size'.
+  de5d489 Added 'ConfigStream::GetLine', 'ConfigStream::PeekLine',
+           'ConfigStream::GetElement' and 'ConfigStream::PeekElement'.
+  4e01a86 Added macros 'ERR' and 'DISP'.
+  8e1fd55 Added class 'ConfigStream'.
+  311212a ---
+  64ca35e Added "Files.cxx".
+  9f218c2 Added 'exists'.
+  f0e595d Changed version number from 0.1 to 0.1a.
+  fc7ae6c Initial revision
+  57b3d27 New repository initialized by cvs2svn.
+
+Acquisition
+-----------
+The original private repository is hosted on the CERFACS laboratory server
+(canis01). Access requires authorization from the original author or the
+CERFACS/INRIA research group.
+
+This copy was cloned from canis01:gitroot/Talos on 2011-04-21 (per the
+repository reflog) and has since travelled with the SCRAM1.1 source
+distribution as a nested git repository.
+
+For inquiries, contact:
+  Vivien Mallet <Vivien.Mallet@inria.fr>
+  CERFACS, 42 Avenue Gaspard Coriolis, 31057 Toulouse Cedex 1, France
+
+Integration into SCRAMBoxApp
+-----------------------------
+This directory was converted from a git submodule to a regular directory on
+2026-09-10 for portability reasons:
+
+  - The original remote (canis01) is a private server, inaccessible to
+    third-party developers.
+  - Talos has not been updated since 2010 and is treated as a stable,
+    static dependency.
+  - A regular directory integrates cleanly with PyInstaller packaging and
+    CESM build systems.
+
+The sources are imported byte-for-byte from commit cd9634ba as exported by
+"git archive"; no file has been modified.
+
+Copyright compliance
+--------------------
+  - Talos is distributed under the GNU General Public License, version 2
+    or (at your option) any later version; copyright is held by INRIA.
+    Every source file keeps its original header, e.g. "Copyright (C)
+    2004-2007, INRIA" and "Author(s): Vivien Mallet".
+  - The full, unmodified license text is preserved in the "license" file.
+  - No source file was modified, so no modification notice is required.
+  - Note that GPL v2 is a strong copyleft license; its redistribution
+    obligations are stricter than those of the LGPL 2.1 Ops library that
+    ships alongside. Anyone redistributing SCRAMBoxApp (including the
+    Windows devkit) should review the implications of shipping this GPL v2
+    component.

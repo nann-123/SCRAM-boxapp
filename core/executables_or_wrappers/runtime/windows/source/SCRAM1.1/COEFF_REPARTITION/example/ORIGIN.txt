@@ -1,0 +1,55 @@
+ORIGIN — Example: Coefficient Repartition Example Programs
+==========================================================
+
+Author:     Zhus <zhus@cerea.enpc.fr>
+License:    Not explicitly stated (see "Licensing status" below)
+Origin:     local git repository, no remote configured
+Version:    commit 3e7fe897c57c8cfce0f7abbbd832b83da070a3b7
+Date:       2012-12-06
+
+Description
+-----------
+Example programs for the COEFF_REPARTITION module: "program.cpp" (C++ driver),
+"script.py" and "script_mpi.py" (usage of the Python interface). The directory
+also contains "script.py~", an editor backup whose contents differ from
+"script.py"; it is kept as received rather than discarded.
+
+Original repository history (1 commit)
+---------------------------------------
+  3e7fe89 Coefficient repartition program C++ version V1
+
+Acquisition
+-----------
+This was a local repository with no remote configured: it was initialized and
+committed on 2012-12-06 15:12:58 +0100 by Zhus <zhus@cerea.enpc.fr> (CEREA,
+France), and has since travelled with the SCRAM1.1 source distribution as a
+nested git repository. The reflog records an initial commit, not a clone.
+
+Licensing status
+----------------
+No license file is present, and no copyright or licensing notice was found in
+any source file of this directory. The distribution terms could not be
+determined from the repository contents, and none are asserted here. The
+files are included unmodified, exactly as they were received, for
+traceability.
+
+Anyone who needs to redistribute this directory beyond the SCRAMBoxApp source
+distribution should first clarify its licensing status with the original
+author:
+
+  Zhus <zhus@cerea.enpc.fr>
+  CEREA (École des Ponts ParisTech), France
+
+Integration into SCRAMBoxApp
+-----------------------------
+This directory was converted from a git submodule to a regular directory on
+2026-09-10 for portability reasons:
+
+  - The original repository has no remote at all, so no clone could ever
+    fetch its contents.
+  - The example programs document the C++ and Python interfaces (they are
+    referenced by COEFF_REPARTITION/README) and do not evolve.
+  - A regular directory integrates cleanly with the Windows devkit packaging.
+
+The sources are imported byte-for-byte from commit 3e7fe89 as exported by
+"git archive"; no file has been modified.
