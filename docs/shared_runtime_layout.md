@@ -52,3 +52,13 @@ Only the required SCRAM source and asset files are packaged into that `source/` 
 ## Packaging Intent
 
 This layout supports a shared read-only installation while keeping generated configs, staged runtime files, reports, and internal/external mixing results in per-user writable locations.
+
+## Platform Roles
+
+- `windows/` — manual development/debugging, verification/review, and release packaging.
+- `linux/` — automated scheduled troubleshooting; built from `../windows/source/SCRAM1.1` via
+  `scripts/linux/build_runtime.sh`.
+- `mac/` — reserved (not present in this repository).
+
+Linux-side automation must never write into `windows/`; `scripts/linux/check_windows_parity.sh`
+verifies that before every scheduled round.

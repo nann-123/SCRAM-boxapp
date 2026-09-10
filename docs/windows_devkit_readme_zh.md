@@ -4,6 +4,11 @@
 
 本文所有路径都以开发包根目录为起点，例如 `D:\SCRAMBoxApp-WinDevKit`。如果你把包解压到其他位置，只需要把命令中的路径理解为相对路径即可。
 
+
+> **平台分工**：本开发包面向 **Windows** 侧的人工开发调试、核验审核与发布打包。**Linux** 侧只承担自动化定时排查
+> （构建 → 标准测试 → 不变量 → 探测），其工具链与文档位于仓库的 `scripts/linux/` 与 `docs/linux_debugging/`，
+> **不随本开发包分发**。两侧分工与不冲突规则见仓库根 `README.md` 的
+> "Development and debugging (Windows and Linux)" 一节。
 ## 1. 开发包目录总览
 
 ```text
@@ -379,6 +384,25 @@ core\executables_or_wrappers\runtime\windows\
 
 覆盖后必须重新运行标准测试。
 
+### 在 Linux 上重新编译（可选，用于在 Linux 机器上直接调试模型）
+
+本仓库同时带有一个 Linux 原生核心，编译并安装只需一条命令：
+
+```bash
+cd SCRAMBoxApp-WinDevKit
+bash scripts/linux/build_runtime.sh        # 加 "debug" 可得 -O0 -g -fcheck=bounds -fbacktrace
+.venv/bin/python scripts/launch_app.py     # 启动 GUI
+```
+
+- 依赖：`gfortran`、`gcc`、NetCDF-Fortran。Debian/Ubuntu 下：
+  `sudo apt install gfortran gcc libnetcdff-dev`。
+- 产物安装到 `core/executables_or_wrappers/runtime/linux/`，GUI 会按当前平台自动选用
+  （解析顺序见 `docs/shared_runtime_layout.md`）。
+- 改完 `SRC/*.f90` 后重跑该脚本即可，之后应重新运行标准测试。
+- 手动运行时需要在工作目录下先建好 `RESULT/`（GUI 会自动创建）。
+- 细节与构建依赖版本见 `core/executables_or_wrappers/runtime/linux/README.md`。
+> 注意：该 Linux 工具链随仓库提供，**不包含在本开发包内**（本包只带 Windows 运行时与源码）。
+
 ## 10. 模板和实验配置位置
 
 内置模板在：
@@ -462,6 +486,8 @@ app\services\report_service.py
 
 ## 13. 重新生成本开发包
 
+
+> `WINDOWS_DEVKIT_MANIFEST.txt` 由本脚本自动生成，**请勿手工编辑**；内容变化时在 Windows 上重新运行本脚本即可。
 如果教师或助教在完整项目中继续修改后，需要重新抽取 Windows 开发包，运行：
 
 ```powershell
@@ -507,6 +533,9 @@ core\executables_or_wrappers\runtime\windows\ProgramSCRAM.exe
 
 ## 15. 建议分工
 
+
+> 本节只覆盖 Windows 侧的人工开发调试；Linux 侧的自动化定时排查见 `docs/linux_debugging/runbook.md`
+> （随仓库，不在本包内）。
 GUI 方向学生：主要看 `app\views\main_window.py`、`app\i18n\`、`app\services\settings_service.py`。
 
 模型运行方向学生：主要看 `app\services\run_service.py`、`core\templates\`、`core\defaults\`。

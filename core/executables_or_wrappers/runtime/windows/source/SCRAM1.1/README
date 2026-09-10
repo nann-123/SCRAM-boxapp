@@ -42,3 +42,20 @@ simulation within the article with following command:
 *** Contact ***
 If you have further questions, please contact:
 zhus@cerea.enpc.fr
+
+*** SCRAMBoxApp note: building and debugging this tree ***
+
+This source tree is shared by both platforms, but each side uses it differently:
+
+- Linux (automated, scheduled troubleshooting only): build and install the native core with
+  `bash scripts/linux/build_runtime.sh` from the repository root. That wrapper runs scons with
+  `FC=gfortran` and installs the binary into `core/executables_or_wrappers/runtime/linux/`.
+  Scheduled rounds: `bash scripts/linux/auto_round.sh [quick|standard|deep]`. Toolchain in
+  `scripts/linux/`, documents in `docs/linux_debugging/`.
+- Windows (manual development and debugging, verification/review, release packaging): the shipped
+  runtime is `runtime/windows/ProgramSCRAM.exe`; rebuilding it needs a Windows Fortran/C toolchain
+  (see the README in `runtime/windows/`). Packaging is done with `scripts/package_app_windows.ps1`
+  and `scripts/make_windows_devkit.ps1` — never from Linux.
+
+Do not run bare `scons` for a release build: the wrappers carry the required flags and the
+Windows/POSIX differences (`SRC/ModuleCoeffRepartitionBoxmodel.f90`, `coeff_make_dir`).

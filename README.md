@@ -10,13 +10,34 @@ The current copyable shared package is located at:
 
 That package is the one to hand to other users. It contains the GUI, platform runtime folders, and the SCRAM source files needed to rerun or rebuild the native program.
 
+## What this repository contains
+
+This repository is the **Windows development kit** (`SCRAMBoxApp-WinDevKit`): the GUI and
+Python app, the Windows runtime (`ProgramSCRAM.exe` plus the required DLLs), the SCRAM
+Fortran source, the Windows launch/packaging scripts, and a Linux-native core under
+`core/executables_or_wrappers/runtime/linux/`.
+
+**Division of work** — **Linux** runs automated, scheduled troubleshooting only (build the native
+core → standard tests → invariants → probes → report). **Windows** is where manual development and
+debugging, verification/review of what Linux proposes, and release packaging happen. The Linux
+toolchain and documents live in `scripts/linux/` and `docs/linux_debugging/`; details and the four
+non-conflict rules are in
+[Development and debugging](#development-and-debugging-windows-and-linux).
+
+Parts of the full shared package described in this file are **not** included here:
+`scripts/run_app_linux.sh`, `scripts/run_app_macos.sh`, `scripts/make_linux_release.sh`,
+`scripts/install_linux_fresh.sh`, `scripts/check_rdb_core_invariants.py`,
+`scripts/run_comparison_pipeline.sh`, `docs/linux_fresh_install.md`,
+`docs/linux_shared_install.md`, and `dist/`. Where this file refers to them, use the
+equivalent steps under "Install on Linux" below.
+
 ## How to use the shared package
 
 1. Copy the whole package directory to the target machine or another shared location.
 2. Keep the directory structure intact.
 3. Start the GUI with the launcher that matches the platform:
-   - Linux: `bash scripts/run_app_linux.sh`
-   - macOS: `bash scripts/run_app_macos.sh`
+   - Linux: `bash scripts/run_app_linux.sh` — not part of this repository, see "Install on Linux"
+   - macOS: `bash scripts/run_app_macos.sh` — not part of this repository
    - Windows: `scripts\run_app_windows.bat`
 4. If the launcher cannot find a usable bundled Python environment, set `SCRAM_PYTHON` to a Python interpreter that already has the requirements installed.
 5. If the bundled `ProgramSCRAM` for the current platform is missing or cannot run, set `SCRAM_PROGRAMSCRAM` to the native executable for that system.
@@ -24,6 +45,10 @@ That package is the one to hand to other users. It contains the GUI, platform ru
 The GUI is the normal entry point. Use it to edit cases, select the platform runtime, and run SCRAM jobs.
 
 ## Fresh Linux machine deployment
+
+> The release and install scripts in this section belong to the full shared package and are
+> **not** part of this repository. To build and run the core on a Linux machine from this
+> repository, follow "Install on Linux" below instead.
 
 For a completely blank Linux server or workstation, create a source-first release tarball on the development machine:
 
@@ -65,26 +90,58 @@ python app/main.py
 
 ## Install on Linux
 
-```bash
-cd scram_boxapp_shared_release_clean
-bash scripts/run_app_linux.sh
-```
+The upstream Linux launcher (`scripts/run_app_linux.sh`) is not part of this repository.
+The equivalent steps here are:
 
-For shared installations, see [docs/linux_shared_install.md](docs/linux_shared_install.md).
+1. Create the project virtual environment at the repository root and install the requirements:
 
-For the platform-aware runtime tree and packaging helper, see [docs/shared_runtime_layout.md](docs/shared_runtime_layout.md).
+   ```bash
+   cd SCRAMBoxApp-WinDevKit
+   python3 -m venv .venv
+   .venv/bin/python -m pip install --upgrade pip
+   .venv/bin/python -m pip install -r requirements.txt
+   ```
+
+2. Build the Linux-native simulation core and install it into the shared runtime tree:
+
+   ```bash
+   bash scripts/linux/build_runtime.sh          # add "debug" for -O0 -g -fcheck=bounds
+   ```
+
+   This compiles `ProgramSCRAM` from
+   `core/executables_or_wrappers/runtime/windows/source/SCRAM1.1` with `gfortran` and the
+   system NetCDF libraries (`nf-config` / `nc-config`), then installs it to
+   `core/executables_or_wrappers/runtime/linux/`, where the GUI looks for the platform
+   runtime. A prebuilt copy is committed there; rerun the script after changing Fortran code.
+
+   Prerequisites (Debian/Ubuntu): `sudo apt install gfortran gcc libnetcdff-dev`.
+
+3. Start the GUI:
+
+   ```bash
+   .venv/bin/python scripts/launch_app.py
+   ```
+
+4. Run the standard smoke suite (import, GUI, report, and real model runs):
+
+   ```bash
+   .venv/bin/python scripts/run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs/standard_tests
+   ```
+
+For the platform-aware runtime tree, see [docs/shared_runtime_layout.md](docs/shared_runtime_layout.md).
 
 Notes for Linux:
 
-- You do not need to activate `.venv` manually. The launcher uses `.venv/bin/python` directly.
-- The launcher is for the desktop GUI. If you run from a plain tty with no `DISPLAY` or `WAYLAND_DISPLAY`, it now stops with a clear message instead of letting Qt abort.
-- For headless smoke tests only, you can force Qt offscreen mode with `QT_QPA_PLATFORM=offscreen bash scripts/run_app_linux.sh`.
+- You do not need to activate `.venv` manually; call `.venv/bin/python` directly.
+- The GUI needs a desktop session. Headless smoke tests can force Qt offscreen mode with `QT_QPA_PLATFORM=offscreen`.
 - If Qt reports `libxcb-cursor.so.0` is missing, install `libxcb-cursor0` first.
-- The copied `core/executables_or_wrappers/runtime/ProgramSCRAM` in this repository came from macOS and cannot run on Linux.
+- This repository ships a Linux-native core at `core/executables_or_wrappers/runtime/linux/ProgramSCRAM`, built from the bundled Fortran source. It replaces the macOS binary referenced by earlier revisions of this file, which could not run on Linux.
 - The app uses only the current platform runtime by default and refuses incompatible binaries instead of falling back to legacy sibling builds.
 - You can point the app at an explicitly chosen native SCRAM executable by setting `SCRAM_PROGRAMSCRAM=/path/to/ProgramSCRAM`; incompatible executables are rejected.
-- The app stages the platform runtime into the user state directory with a runtime version manifest so stale cached binaries are replaced when the bundled binary/source changes.
+- The app stages the platform runtime into the user state directory (`~/.local/state/scram_boxapp_mixing/runtime/linux/`) with a runtime version manifest so stale cached binaries are replaced when the bundled binary/source changes.
 - The runtime still expects short config filenames, so the app stages per-run configs into the runtime directory automatically.
+- Running the core by hand requires a `RESULT/` directory in the working directory; the GUI creates it automatically before each run.
+- The Fortran core needs `SRC/ModuleCoeffRepartitionBoxmodel.f90` (`coeff_make_dir`) to create output directories, which is why it detects the platform and uses `mkdir -p` on POSIX instead of `cmd /c mkdir`.
 
 ## Install on Windows
 
@@ -145,6 +202,64 @@ Run the standard smoke suite on Windows with:
 .\.venv\Scripts\python scripts\run_standard_tests.py --template gmd_paris_full --case gmd_paris_full --output-root install_logs\standard_tests
 ```
 
+## Development and debugging (Windows and Linux)
+
+Both platforms share the same application code; only the simulation core and the tooling differ.
+
+**Division of work**:
+
+- **Linux** — automated, scheduled troubleshooting only: build the native core, run standard tests,
+  check invariants, run probes, and report. Toolchain in `scripts/linux/`, documents in
+  `docs/linux_debugging/`, all outputs under `install_logs/auto/` (git-ignored).
+- **Windows** — manual development and debugging, verification/review of what Linux proposes, and
+  producing the release (installer, devkit package, release screenshots).
+
+Both sides may edit shared application code and documents; the four rules below (enforced by
+`scripts/linux/check_windows_parity.sh`) keep them from conflicting.
+
+| | Windows | Linux |
+|---|---|---|
+| Environment | `.venv` at the project root (devkit README §5) | same, see [Install on Linux](#install-on-linux) |
+| Simulation core | `core/executables_or_wrappers/runtime/windows/ProgramSCRAM.exe` + DLLs (committed) | `core/executables_or_wrappers/runtime/linux/ProgramSCRAM` (committed; rebuild with `scripts/linux/build_runtime.sh`) |
+| Start the GUI | `scripts\run_app_windows.bat` | `.venv/bin/python scripts/launch_app.py` |
+| Standard tests | `.\.venv\Scripts\python scripts\run_standard_tests.py …` (devkit README §6) | same command via `.venv/bin/python` |
+| Screenshots | `python scripts\capture_screenshots.py` → writes `docs/screenshots/` | `python scripts/capture_screenshots.py --out install_logs/shots` — **never overwrite the release assets** (the script pins the Windows UI font) |
+| Packaging / release | `scripts\package_app_windows.bat`, `scripts\make_windows_devkit.ps1` (devkit README §8/§13) | not available — do it on Windows |
+| Parity guard | `bash scripts/linux/check_windows_parity.sh` | `bash scripts/linux/check_windows_parity.sh` |
+
+### Linux debugging toolchain
+
+| Script | Purpose | When |
+|---|---|---|
+| `scripts/linux/build_runtime.sh [safe\|debug]` | Build and install the Linux core from `source/SCRAM1.1` | after touching Fortran code |
+| `scripts/linux/auto_round.sh quick\|standard\|deep` | One verification round (guard → build → tests → metrics). A content signature skips rounds where nothing changed and appends one line to `install_logs/auto/digest.md` | scheduled (see the runbook) |
+| `scripts/linux/collect_metrics.py --round-dir …` | Extract invariants, compare with the previous round and the documented baselines | inside a round |
+| `scripts/linux/probe_cell.py` | Run one parameter cell and collect discovery signals (status, invariants, log keywords) | when hunting for new bugs |
+| `scripts/linux/probe_suggest.py [--matrix] [--mark …]` | Mine the source tree and coverage matrix for the next probes; record results in `docs/linux_debugging/probe_ledger.json` | each round |
+| `scripts/linux/check_windows_parity.sh` | Fails if Linux-side work would change the Windows release | before/after any change |
+
+All outputs are git-ignored: `install_logs/auto/<timestamp>/` (one directory per round),
+`install_logs/auto/digest.md` (rolling summary), `install_logs/auto/probes/` (probe results),
+`dist/linux-support/` (portable Linux bundle).
+
+### Documents for Linux debugging and automation
+
+| Document | Role |
+|---|---|
+| `docs/linux_debugging/brief.md` | The rules: acceptance baselines, per-round flow, prohibitions, known pitfalls |
+| `docs/linux_debugging/runbook.md` | Day-to-day usage: the prompt to hand an agent, next-morning review, scheduling tiers |
+| `docs/linux_debugging/probe_backlog.md` | How new bugs are found: probe classes, coverage matrix, anti-stagnation rules |
+| `docs/linux_debugging/probe_ledger.json` | Machine-readable record of probed cells and hypotheses |
+| `docs/BUG_TRACKING.md` | Open bug queue (unchanged; the probe flow feeds it) |
+
+**Non-conflict rules** (enforced by `scripts/linux/check_windows_parity.sh`):
+
+1. Never modify `core/executables_or_wrappers/runtime/windows/**` or the two Windows packaging
+   scripts from the Linux side.
+2. Keep the Windows branch in shared source — e.g. `coeff_make_dir` keeps `cmd /c ... mkdir`.
+3. Linux-generated screenshots are review copies only; release screenshots are regenerated on Windows.
+4. Version bumps and Windows checklist items are proposals until verified on Windows.
+
 ## GUI workflow
 
 1. Open the app and choose `中文` or `English`.
@@ -174,10 +289,11 @@ The GUI keeps the current SCRAM config semantics intact:
 ## Results and comparison pipeline
 
 ```bash
-./scripts/run_comparison_pipeline.sh
+./scripts/run_comparison_pipeline.sh   # full shared package only, not in this repository
 ```
 
 This pipeline runs the internal/external mixing comparison workflow, regenerates plots, and updates the Chinese report.
+In this repository, use the GUI compare workflow or `scripts/run_standard_tests.py` instead.
 
 ## Report behavior
 
@@ -193,9 +309,10 @@ This pipeline runs the internal/external mixing comparison workflow, regenerates
 ## Platform notes
 
 - The bundled runtime in `core/executables_or_wrappers/runtime/` is managed internally by the app.
-- The current development environment verified real macOS and Windows execution.
-- Linux execution requires a Linux-native `ProgramSCRAM` because the copied macOS binary is Mach-O and cannot run on Linux.
-- When a copied macOS `.venv` is detected, the Linux launcher recreates it automatically.
+- This repository verifies Windows execution (`ProgramSCRAM.exe` plus DLLs) and Linux execution
+  (`runtime/linux/ProgramSCRAM`, built from the bundled Fortran source).
+- Linux execution requires a Linux-native `ProgramSCRAM`; `scripts/linux/build_runtime.sh` builds
+  it from `core/executables_or_wrappers/runtime/windows/source/SCRAM1.1`.
 - Windows launch and packaging scripts are included, and the Windows runtime ships with a native `ProgramSCRAM.exe`.
 
 ## Troubleshooting
