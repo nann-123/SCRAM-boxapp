@@ -32,12 +32,23 @@ def point_to_result_root(window: MainWindow, result_root: Path) -> None:
 
 
 def main() -> int:
+    out = ROOT / "docs" / "screenshots"
+    argv = sys.argv[1:]
+    if "--out" in argv:
+        index = argv.index("--out")
+        if index + 1 >= len(argv):
+            print("usage: capture_screenshots.py [--out <dir>]", file=sys.stderr)
+            return 2
+        out = Path(argv[index + 1]).expanduser().resolve()
+
     app = QApplication([])
+    # Windows UI font: other platforms fall back to their own fonts, so the
+    # committed release screenshots must be regenerated on Windows. Use --out
+    # to write review copies elsewhere (e.g. install_logs/) on Linux.
     app.setFont(QFont("Microsoft YaHei UI", 9))
     window = MainWindow(ROOT)
     result_root = ROOT / "install_logs" / "audit_standard_tests_report2"
     point_to_result_root(window, result_root)
-    out = ROOT / "docs" / "screenshots"
     out.mkdir(parents=True, exist_ok=True)
     window.resize(1600, 1020)
 
