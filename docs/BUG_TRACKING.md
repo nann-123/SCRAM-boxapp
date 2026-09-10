@@ -1,6 +1,6 @@
 # SCRAM BoxApp Bug 追踪表
 
-> 创建日期: 2026-07-23 | 最后更新: 2026-07-27 | 新增 nucl_model=5 文件读取 bug、euler_coupled 非零质量触发
+> 创建日期: 2026-07-23 | 最后更新: 2026-09-10 | 新增 #10 截图文字全为方框（文档资产不可用）
 
 ## 修复状态
 
@@ -15,6 +15,7 @@
 | 7 | 🔴 P2 | 重分配 | ❌ P2 待定 | 需重编译 Fortran；非零质量也会触发，见 #7.1 |
 | 8 | 🟡 P1 | 运行 | ✅ 已修复 | gmd_hazy 正确检测为 `failed`（原误报 `ok`） |
 | 9 | 🔴 P1 | 初始化 | ❌ 未修复 | nucl_model=5 跳过行后文件位置错位，需补 dummy read |
+| 10 | 🟡 P1 | 文档资产 | ❌ 未修复 | **界面截图类资产共 24 张的密度异常**：`docs/screenshots/`（9）、`docs/user_manual_zh_assets/screenshots/`（8）、`docs/undergrad_lab_assets/`（8）文字全渲染为方框（中英文皆然）；被根 `README.md`、用户手册与教学手册引用。需在有字体的 Windows 上按 §7 重生成，并给生成脚本加字体可用性检查 |
 
 ## Bug 总览
 
@@ -169,3 +170,16 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 | 运行耗时 | — | 24.03 s | 30 物种全动力学 |
 
 > nucl_model=5 是完全自成一体的硬编码验证模式：忽略配置文件物种数据，用 hazy 场景参数化 + 50/50 SO₄+BC 均分 + 硬编码 SO₄ 排放。结果与 tutorial/hazy 模板运行不可比。
+
+### Bug #10: 截图文字全部渲染为方框（文档资产不可用）
+
+| 项目 | 内容 |
+|------|------|
+| **位置** | `docs/screenshots/`（9 张）、`docs/user_manual_zh_assets/screenshots/`（8 张）、`docs/undergrad_lab_assets/`（8 张，含主界面与各面板截图）+ 生成脚本 `scripts/capture_screenshots.py`。手册资产目前**没有生成脚本**，靠人工从 pipeline 输出与新截图拷贝 |
+| **触发条件** | 在**没有可用字体**（或缺少 CJK 回退）的环境运行 `capture_screenshots.py`。脚本只做 `app.setFont(QFont("Microsoft YaHei UI", 9))`，既无字体可用性检查，也无回退字体链 |
+| **表现** | 截图中所有文字渲染成 □□□□——**中英文都是**，界面只剩空控件框；手册与 README 的界面示意图变成不可读 |
+| **影响面** | 根 `README.md`、`docs/SCRAM_BoxApp_中文用户操作手册.md`、`docs/SCRAM_BoxApp_本科教学实验手册.md` 都引用这些界面图；学生对照手册看界面时无法使用（约 25 处引用） |
+| **证据** | ① 目视 `main_zh.png` / `main_en.png`：满屏方框（中英文皆然）；② `python scripts/linux/check_assets.py --render` 自动判定 **9/9 张坏图**——仓库内资产密度仅为同场景新鲜渲染的 4%–35%（如 `main_zh` 0.0115 vs 0.1242），该对比还抓到了密度启发式漏掉的 `results_view.png`（35%）；③ 密度异常共 24 张（三个目录各 8 张）；④ 截图生成于 `d8e539b`（2026-07-22），而 `app/` 之后在 `c9b6310`（2026-07-27）又改过 → 按 devkit §7 判据同时已过期 |
+| **修复方向** | ① 生成前检查字体可用性（`QFontDatabase.families()` 是否含目标字体或 CJK 覆盖），不满足则直接失败并提示安装字体；② `setFont` 改为带回退链（Windows: Microsoft YaHei UI → SimSun；Linux: Noto Sans CJK SC）；③ 生成后自检（渲染已知文本，宽度等于缺字宽度即判为方框）；④ 在有字体的 Windows 上重生成截图并同步替换三处目录的资产与手册引用；⑤ 为手册资产补一个生成/同步脚本（当前靠人工拷贝），在 §7 触发（改了 GUI）时生成对比图，人工确认后替换 |
+| **测试配置** | `python scripts/capture_screenshots.py --out install_logs/shots`，校验产物非方框后与 `docs/screenshots/` 对照 |
+| **备注** | 由"资产过期检查"发现（`app/` 最后改动时间晚于截图生成时间）；属探测类 P9「资产完整性」的首个实例。P9 已接入 `auto_round.sh` 每轮自动跑（`scripts/linux/check_assets.py`），修复前每轮都会报 WARN，直到本 Bug 关闭 |

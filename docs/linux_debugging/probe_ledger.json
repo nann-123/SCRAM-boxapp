@@ -1,0 +1,31 @@
+{
+  "cells": {
+    "gmd_paris_full|core_conserv": {
+      "status": "done",
+      "note": "标准测试完整版通过（8 项 smoke 全 ok）",
+      "date": "2026-09-10"
+    },
+    "gmd_paris_coagulation|core_conserv": {
+      "status": "done",
+      "note": "标准测试快速版通过（--skip-report）",
+      "date": "2026-09-10"
+    },
+    "gmd_hazy_coag_cond|core_conserv": {
+      "status": "bug",
+      "note": "复现 Bug #7（已知）：两侧 status=failed，日志 non conservation + IEEE_DIVIDE_BY_ZERO/IEEE_INVALID，anomaly 各 5 条",
+      "date": "2026-09-10"
+    },
+    "gmd_paris_emission_only|legacy": {
+      "status": "clean",
+      "note": "干净；数值 24.4820 / 3.4465e10 精确命中教学手册场景 A",
+      "date": "2026-09-10"
+    }
+  },
+  "hypotheses": {
+    "code:P9:asset-integrity": {
+      "status": "bug",
+      "note": "P9 资产完整性检查首次运行即发现 Bug #10：docs/screenshots 九张图文字渲染为方框（中英文皆然）且晚于 app/ 改动；检查脚本 scripts/linux/check_assets.py 已接入每轮",
+      "date": "2026-09-10"
+    }
+  }
+}
