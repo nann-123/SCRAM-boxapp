@@ -91,14 +91,16 @@ class RunService:
 
     def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
         # Case preset provides suggested values to the GUI (via apply_case_preset),
-        # but the user may override them.  Normalize without forcing preset values.
+        # but the user may override them（Bug #11：显式设置优先）。
+        # 注意 normalize() 只保留固定键，所以必须在 normalize 之前先把 explicit_keys 取出来。
+        explicit = {str(key) for key in (config_data.get("explicit_keys") or [])}
         data = self.config_model.normalize(config_data)
         data = self._with_mixing_assumption(data, scheme)
         # Apply case preset process switches and duration to the generated config.
         preset_name = data.get("case_preset", "")
         preset = CASE_PRESETS.get(preset_name) if preset_name else None
         if preset is not None:
-            data = self._with_case_preset(data, preset)
+            data = self._with_case_preset(data, preset, explicit)
         config_path = self.generated_root / f"{case_name}_{scheme.lower()}.cfg"
         runtime_config_relpath = self._runtime_config_relpath(case_name, scheme)
         runtime_config_path = self.runtime_dir / runtime_config_relpath
@@ -305,13 +307,24 @@ class RunService:
                 writer.writeheader()
                 writer.writerows(final_rows)
 
-    def _with_case_preset(self, config_data: dict[str, Any], preset: dict[str, float | int] | None) -> dict[str, Any]:
+    def _with_case_preset(self, config_data: dict[str, Any], preset: dict[str, float | int] | None,
+                          explicit: set[str] | None = None) -> dict[str, Any]:
         data = self.config_model.normalize(config_data)
         if preset:
-            data["scalars"]["with_coag"] = int(preset["with_coag"])
-            data["scalars"]["with_cond"] = int(preset["with_cond"])
-            data["scalars"]["with_nucl"] = int(preset["with_nucl"])
-            data["scalars"]["final_time_hours"] = float(preset["duration_hours"])
+            # Bug #11 修复（2026-09-11）：预设是"建议值"，不得覆盖显式设置。
+            # explicit 由调用方给出（GUI 的 _collect_data 比较表单与预设建议值；
+            # probe_cell 的 --set）。列进去的键保留当前值，其余键用预设值补齐/套用。
+            explicit = set(explicit or ())
+            preset_values = {
+                "with_coag": int(preset["with_coag"]),
+                "with_cond": int(preset["with_cond"]),
+                "with_nucl": int(preset["with_nucl"]),
+                "final_time_hours": float(preset["duration_hours"]),
+            }
+            for key, value in preset_values.items():
+                if key in explicit:
+                    continue
+                data["scalars"][key] = value
         return data
 
     def _with_mixing_assumption(self, config_data: dict[str, Any], scheme: str) -> dict[str, Any]:

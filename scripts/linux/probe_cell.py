@@ -57,35 +57,61 @@ def coerce(value: str):
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Probe one parameter cell.")
-    parser.add_argument("--template", required=True)
+    parser.add_argument("--template", default=None)
+    parser.add_argument("--cfg", default=None,
+                        help="直接跑一个原始 cfg 文件（与 --template 二选一）；用于 docs/checktest/ 下的夹具，"
+                             "例如 Bug #1 的 zero_initial_mass_{test,fixed}.cfg")
     parser.add_argument("--case", default=None, help="CASE_PRESETS key (默认与模板同名)")
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                         help="覆盖标量字段，可重复；数值自动转 int/float")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
+    if not args.template and not args.cfg:
+        parser.error("需要 --template 或 --cfg 之一")
 
     from app.config_binding.config_model import ConfigModel
     from app.services.run_service import RunService
     from app.services.template_service import TemplateService
 
-    case_name = args.case or args.template
+    if args.cfg:
+        cfg_path = Path(args.cfg)
+        if not cfg_path.is_absolute():
+            cfg_path = ROOT / cfg_path
+        if not cfg_path.exists():
+            print(f"cfg 不存在：{cfg_path}")
+            return 2
+        case_name = args.case or cfg_path.stem
+        label = f"cfg__{case_name}"
+    else:
+        case_name = args.case or args.template
+        label = args.template
     overrides = {}
     for item in args.set:
         key, _, raw = item.partition("=")
         overrides[key.strip()] = coerce(raw.strip())
 
-    label = "__".join([args.template, case_name] + [f"{k}-{v}" for k, v in sorted(overrides.items())])
+    label = "__".join([label, case_name] + [f"{k}-{v}" for k, v in sorted(overrides.items())])
     out = (args.out or ROOT / "install_logs" / "auto" / "probes" / label).resolve()
     out.mkdir(parents=True, exist_ok=True)
 
-    config = TemplateService(ROOT).load_template(args.template)
-    if args.case:
+    if args.cfg:
+        config = ConfigModel(ROOT).parse(cfg_path)
+        config["template_name"] = cfg_path.stem
+        # 夹具要按"文件里写的"跑：清掉 case_preset，避免被案例预设的过程开关/时长覆盖
+        config["case_preset"] = ""
+    else:
+        config = TemplateService(ROOT).load_template(args.template)
+    if args.case and not args.cfg:
         config["case_preset"] = case_name
     for key, value in overrides.items():
         if key in config.get("scalars", {}):
             config["scalars"][key] = value
         else:
             config[key] = value
+    # Bug #11（2026-09-11）：把覆写的键标成显式，避免被 case preset 覆盖；
+    # 覆盖不到的键由下方的"覆写落地校验"报出来，不再静默丢弃。
+    if overrides:
+        config["explicit_keys"] = sorted(set(config.get("explicit_keys", [])) | set(overrides))
 
     errors = ConfigModel(ROOT).validate(config)
     if errors:
@@ -99,6 +125,63 @@ def main() -> int:
     elapsed = time.time() - started
 
     findings: list[str] = []
+
+    # --- 覆写落地校验（2026-09-11 新增）----------------------------------------
+    # run_service._with_case_preset 会**无条件**覆盖 with_coag/with_cond/with_nucl/final_time_hours
+    # （Bug #11）。不校验的话，--set 会被静默丢弃、探测"什么都没测到"却记为 clean。
+    dropped: list[str] = []
+    try:
+        schema_data = json.loads((ROOT / "core" / "schema" / "config_schema.json").read_text())
+    except Exception:
+        schema_data = {}
+
+    def _line_of(key: str) -> int | None:
+        found: list[int] = []
+
+        def walk(node) -> None:
+            if isinstance(node, dict):
+                if node.get("key") == key and "line_index" in node:
+                    try:
+                        found.append(int(node["line_index"]))
+                    except (TypeError, ValueError):
+                        pass
+                for value in node.values():
+                    walk(value)
+            elif isinstance(node, list):
+                for value in node:
+                    walk(value)
+
+        walk(schema_data)
+        return found[0] if found else None
+
+    generated = Path.home() / ".cache" / "scram_boxapp_mixing" / "generated_configs"
+    for okey, ovalue in overrides.items():
+        line_i = _line_of(okey)
+        if line_i is None:
+            continue
+        for mode in ("internal_mixing", "external_mixing"):
+            cfg_file = generated / f"{case_name}_{mode}.cfg"
+            if not cfg_file.exists():
+                continue
+            try:
+                tokens = cfg_file.read_text(errors="replace").splitlines()[line_i].split("##")[0].split()
+            except IndexError:
+                continue
+            if not tokens:
+                continue
+            try:
+                landed = abs(float(tokens[0]) - float(ovalue)) < 1e-12
+            except (TypeError, ValueError):
+                landed = str(tokens[0]) == str(ovalue)
+            if not landed:
+                dropped.append(f"{okey}={ovalue} 未落地（{cfg_file.name} 实际为 {tokens[0]}）")
+    if dropped:
+        print("  !! 覆写未生效：请求的参数没有写进生成的 cfg（可能被 case preset 覆盖，见 Bug #11）")
+        for item in dict.fromkeys(dropped):
+            print(f"     - {item}")
+        print("     → 本次运行**不能**作为该参数的探测结论（实际跑的是别的配置）")
+        findings.append("覆写未生效：" + "; ".join(dict.fromkeys(dropped)))
+
     report = {
         "cell": {"template": args.template, "case": case_name, "overrides": overrides},
         "runs": {}, "invariants": {}, "log_keywords": {}, "elapsed_s": round(elapsed, 2),

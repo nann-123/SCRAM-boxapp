@@ -1,31 +1,277 @@
 {
   "cells": {
-    "gmd_paris_full|core_conserv": {
-      "status": "done",
-      "note": "标准测试完整版通过（8 项 smoke 全 ok）",
-      "date": "2026-09-10"
-    },
-    "gmd_paris_coagulation|core_conserv": {
-      "status": "done",
-      "note": "标准测试快速版通过（--skip-report）",
-      "date": "2026-09-10"
-    },
     "gmd_hazy_coag_cond|core_conserv": {
       "status": "bug",
-      "note": "复现 Bug #7（已知）：两侧 status=failed，日志 non conservation + IEEE_DIVIDE_BY_ZERO/IEEE_INVALID，anomaly 各 5 条",
+      "note": "复现已知Bug#7: euler_coupled redistribution 非守恒+IEEE_DIVIDE_BY_ZERO, 非新Bug",
       "date": "2026-09-10"
+    },
+    "gmd_paris_full|legacy": {
+      "status": "clean",
+      "note": "两侧ok; EXT mass=33.7511/num=1.16389e10 anomaly=1232 max_rel_res=6.892e-16; INT mass=32.7338/num=1.02608e10 anomaly=578 max_rel_res=7.988e-16; has_nan=0 has_inf=0; legacy轨与core_conserv数值不同属预期(双轨差异,见Bug#5),无新Bug",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_full|core_nogrow": {
+      "status": "clean",
+      "note": "status=ok 残差6.9e-16 无NaN 矩阵空格已覆盖",
+      "date": "2026-09-10"
+    },
+    "gmd_paris_condensation|core_nogrow": {
+      "status": "clean",
+      "note": "20260911: 双侧ok, mass=33.0654/32.6176, anomaly=124/213, 残差0, 无NaN/Inf; 终态与legacy/core_smallgrow完全一致(该模板下redistribution_option未改变结果, 待人工确认是否预期)",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|legacy": {
+      "status": "clean",
+      "note": "status=ok 残差8.8e-22 无NaN 2步 矩阵空格已覆盖",
+      "date": "2026-09-10"
+    },
+    "tutorial_minimal|core_conserv": {
+      "status": "clean",
+      "note": "core_conserv 下 INTERNAL/EXTERNAL 均 ok，max_rel_residual=8.8e-22，has_nan=0，anomaly=14（composition_collapse 类，与基线一致）",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|core_nogrow": {
+      "status": "clean",
+      "note": "core_nogrow 下 INTERNAL/EXTERNAL 均 ok，max_rel_residual=8.8e-22，has_nan=0，anomaly=14，与 core_conserv 一致",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|legacy": {
+      "status": "clean",
+      "note": "20260910-223812 探测 ok，residual 0，无NaN，anomaly=8",
+      "date": "2026-09-10"
+    },
+    "gmd_hazy_coag_cond|core_smallgrow": {
+      "status": "bug",
+      "note": "core_smallgrow 下 INTERNAL/EXTERNAL 均 failed：IEEE_DIVIDE_BY_ZERO + non conservation，与 Bug #7（euler_coupled 重分配崩溃）同族，hazy 模板换核心模式不能规避；终态 mass=0.000173701 number=3.4205e9 与基线一致",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911-015200: status=ok, residual<=1e-21, no NaN/inf",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|core_conserv": {
+      "status": "clean",
+      "note": "20260911-015200: status=ok, residual=0, no NaN/inf",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|core_nogrow": {
+      "status": "clean",
+      "note": "20260911: 双侧ok, mass=0.000173701, anomaly=8/8, 残差0, 无NaN/Inf",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911-024505: status=ok, residual=0, no NaN; matrix cell clean",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|legacy": {
+      "status": "bug",
+      "note": "20260911-024505: status=failed, non conservation + IEEE_DIVIDE_BY_ZERO/INVALID; consistent with known Bug #7 (euler_coupled non-conservation), no new bug number",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|core_nogrow": {
+      "status": "bug",
+      "note": "20260911-034939: status=failed, non conservation + IEEE_DIVIDE_BY_ZERO + IEEE_INVALID, mass=1.7e-4(应~24.48), 1步即崩; 候选新Bug",
+      "date": "2026-09-11"
     },
     "gmd_paris_emission_only|legacy": {
       "status": "clean",
-      "note": "干净；数值 24.4820 / 3.4465e10 精确命中教学手册场景 A",
-      "date": "2026-09-10"
+      "note": "20260911-034939: status=ok, mass=24.482, 无异常, 矩阵空格子已覆盖",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_emission_only|core_conserv": {
+      "status": "clean",
+      "note": "20260911-043806: status=ok, mass=24.482, max_rel_residual=0, has_nan=0, anomaly=11/15, 无异常",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_emission_only|core_nogrow": {
+      "status": "clean",
+      "note": "20260911-043806: status=ok, mass=24.482, max_rel_residual=0, has_nan=0, anomaly=11/15, 无异常",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_coagulation|legacy": {
+      "status": "clean",
+      "note": "20260911-043806: status=ok, mass=24.482, max_rel_residual=3.067e-20, has_nan=0, anomaly=10/43, 无异常",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_emission_only|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911-044225 探测: status=ok, residual=0, no NaN/inf, anomaly 11/15",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_coagulation|core_conserv": {
+      "status": "clean",
+      "note": "20260911-044225 探测: status=ok, residual=3.07e-20, no NaN/inf, anomaly 10/43",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_condensation|legacy": {
+      "status": "clean",
+      "note": "20260911-044225 探测: status=ok, residual=0, no NaN/inf, anomaly 124/213, mass 33.07/32.62",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_coagulation|core_nogrow": {
+      "status": "clean",
+      "note": "20260911 探测: status=ok, mass=24.482, max_rel_residual=0, has_nan=0, anomaly ext=10/int=43, 无新发现",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_coagulation|core_smallgrow": {
+      "status": "clean",
+      "note": "deep 20260911-053847: status=ok residual=0/3.07e-20 anomaly 10/43 mass 24.482 无NaN",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_condensation|core_conserv": {
+      "status": "clean",
+      "note": "20260911 探测: status=ok, mass=33.0654, max_rel_residual=0, has_nan=0, anomaly ext=124/int=213, 无新发现",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_full|core_conserv": {
+      "status": "clean",
+      "note": "20260911 探测: status=ok, mass=33.7511, max_rel_residual=6.892e-16, has_nan=0, anomaly ext=1232/int=578, 与基线一致, 无新发现",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_condensation|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911: 双侧ok, 终态与legacy/core_nogrow逐位一致(mass=33.0654/32.6176), anomaly=124/213, 残差0; 该模板下redistribution_option三值结果相同, 待人工确认是否预期",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_full|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911-0742 standard轮: EXTERNAL mass=33.7511 anomaly=1232 residual=6.9e-16 has_nan=0; INTERNAL mass=32.7338 anomaly=578; 无异常",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_condensation|method6": {
+      "status": "bug",
+      "note": "L2变体: redistribution_method=6+with_cond=1 复现已知Bug#7 euler_coupled非守恒(status=failed, non conservation/IEEE_DIVIDE_BY_ZERO), 非新Bug",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|method6": {
+      "status": "bug",
+      "note": "L2变体: redistribution_method=6+with_cond=1 复现已知Bug#7 euler_coupled非守恒(status=failed, non conservation/IEEE_DIVIDE_BY_ZERO), 跨模板一致, 非新Bug",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|method2": {
+      "status": "clean",
+      "note": "L2变体: redistribution_method=2(Moving Diameter)+with_cond=1 双侧ok, mass=0.000173701, anomaly=8, 残差~0, 无NaN/Inf; 验证Bug#7临时规避(6→2)有效, 与method6崩溃对照成立",
+      "date": "2026-09-11"
     }
   },
   "hypotheses": {
+    "gmd_paris_full|legacy": {
+      "status": "clean",
+      "note": "干净：EXT/INT 均 ok，residual 6.9e-16/8.0e-16，无 NaN/inf，mass 33.75/32.73",
+      "date": "2026-09-10"
+    },
+    "gmd_paris_full|core_nogrow": {
+      "status": "clean",
+      "note": "20260911-174644 deep: EXT mass=33.7511 anomaly=1232 / INT mass=32.7338 anomaly=578, residual~8e-16, 无NaN/inf",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|core_smallgrow": {
+      "status": "bug",
+      "note": "复现 Bug #7（已知）：core_smallgrow 下两侧 status=failed，日志 non conservation du nombre total + IEEE_DIVIDE_BY_ZERO/IEEE_INVALID，anomaly 各 5 条；与 core_conserv 表现一致，确认 #7 与重分配模式无关",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|core_conserv": {
+      "status": "clean",
+      "note": "干净：两侧 status=ok，mass=0.0014797 number=4.11353e9，max_rel_residual 8.8e-22，has_nan=0，anomaly=14（既有）",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|core_nogrow": {
+      "status": "clean",
+      "note": "干净：两侧 status=ok，数值与 core_conserv 完全一致（mass=0.0014797 number=4.11353e9），残差 8.8e-22，无 NaN",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|core_conserv": {
+      "status": "clean",
+      "note": "2026-09-10 本轮探测：EXTERNAL/INTERNAL 均 ok，mass=0.000173701 number=3.4205e9，max_rel_residual=0，anomaly=8，无 NaN/Inf",
+      "date": "2026-09-10"
+    },
+    "gmd_hazy_coag_cond__gmd_hazy_coag_cond__redistribution_option-core_smallgrow": {
+      "status": "bug",
+      "note": "status=failed anomaly=5 non_conservation IEEE_DIVIDE_BY_ZERO both mixing modes; mass=0.000173701 number=3.4205e+09",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal__tutorial_minimal__redistribution_option-core_conserv": {
+      "status": "clean",
+      "note": "status=ok both modes anomaly=14 max_rel_residual=8.844e-22 no NaN/Inf",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal__tutorial_minimal__redistribution_option-core_nogrow": {
+      "status": "clean",
+      "note": "status=ok both modes anomaly=14 max_rel_residual=8.844e-22 no NaN/Inf",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond__gmd_hazy_coag_cond__redistribution_method-2": {
+      "status": "clean",
+      "note": "20260911-083910 L2变体: method 6→2, EXT/INT均ok mass=1.73701e-4 守恒 residual=2.8e-22/0 has_nan=0 anomaly=8(既有); Nub Coag=-1.9e8为凝并正常负贡献, 无新异常",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_full|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911 standard轮: EXTERNAL mass=33.7511 anomaly=1232 residual=6.9e-16 无NaN, 与基线一致, 矩阵空格已覆盖",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_coagulation|core_smallgrow": {
+      "status": "clean",
+      "note": "20260911 standard轮: EXTERNAL mass=24.482 anomaly=10 residual=0 无NaN, INTERNAL anomaly=43 residual=3.1e-20, 无异常",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_coag_cond|core_nogrow": {
+      "status": "bug",
+      "note": "20260911 standard轮: 新格子复现Bug#7同类失败(非守恒+IEEE_DIVIDE_BY_ZERO), 但经core_nogrow(RDB mode2)而非euler_coupled; step0即失败, 数量N_nouveau/N_ancien=5.4e-4; 待人工确认是否#7影响面扩大或新路径",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|method6": {
+      "status": "bug",
+      "note": "20260911-095244轮: 复现已知Bug#7(euler_coupled非守恒+IEEE_DIVIDE_BY_ZERO), 非新Bug; 对照tutorial_minimal|method6=clean, 触发与with_cond/物种分布相关",
+      "date": "2026-09-11"
+    },
+    "code:无保护除法:isofwd.f": {
+      "status": "clean",
+      "note": "probe1 gmd_paris_full coag+cond 1h: ext/int 均 ok, has_nan=0 has_inf=0, max_rel_residual=8.7e-20/2.0e-20, anomaly 272/213 无新增类型",
+      "date": "2026-09-11"
+    },
+    "code:零质量阈值:isorev.f": {
+      "status": "clean",
+      "note": "probe3 gmd_hazy_condensation coag+cond RH=0.99 2h: ext/int 均 ok, has_nan=0 has_inf=0, max_rel_residual=2.7e-22/0, anomaly=8",
+      "date": "2026-09-11"
+    },
+    "tutorial_minimal|coag_only": {
+      "status": "clean",
+      "note": "20260911: isofwd零质量阈值探测, 双侧ok mass=0.0014797/num=4.10259e9 anomaly=14 max_rel_res=4.434e-22 has_nan=0 has_inf=0; 无沉默失败, 无新Bug",
+      "date": "2026-09-11"
+    },
+    "gmd_hazy_condensation|gmd_hazy_condensation": {
+      "status": "clean",
+      "note": "20260911: isofwd零质量阈值变体(RH=0.995近饱和), 双侧ok mass=0.000173701/num=3.4205e9 anomaly=8 max_rel_res=0 has_nan=0 has_inf=0; 无沉默失败, 无新Bug",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_condensation|core_nogrow": {
+      "status": "clean",
+      "note": "20260911-174644 deep: EXT mass=33.0654 anomaly=124 / INT mass=32.6176 anomaly=213, residual=0, 无NaN/inf",
+      "date": "2026-09-11"
+    },
+    "gmd_paris_emission_only|core_conserv": {
+      "status": "clean",
+      "note": "20260911-174644 deep: EXT/INT mass=24.482 number=3.44653e10 anomaly=11/15, residual=0, 无NaN/inf",
+      "date": "2026-09-11"
+    },
     "code:P9:asset-integrity": {
       "status": "bug",
       "note": "P9 资产完整性检查首次运行即发现 Bug #10：docs/screenshots 九张图文字渲染为方框（中英文皆然）且晚于 app/ 改动；检查脚本 scripts/linux/check_assets.py 已接入每轮",
       "date": "2026-09-10"
+    },
+    "code:无保护除法:ModuleThermodynamics.f90": {
+      "status": "clean",
+      "note": "20260911-193936 L3变体: gmd_paris_full T=250K RH=0.99, EXT/INT均ok, mass=44.3121/44.3153, anomaly=278/111, residual=1.0e-19/5.7e-21, has_nan=0 has_inf=0, 无新增异常类型",
+      "date": "2026-09-11"
+    },
+    "code:无保护除法:isocom.f": {
+      "status": "clean",
+      "note": "20260911-193936 L3变体: gmd_paris_full P=50kPa T=273K, EXT/INT均ok, mass=36.6479/34.4341, anomaly=1092/564, residual=4.5e-16/1.2e-16, has_nan=0 has_inf=0, 低压未触发除零",
+      "date": "2026-09-11"
     }
-  }
+  },
+  "note": "台账路径自 2026-09-11 起统一为 docs/linux_debugging/probe_ledger.json；此前脚本误写 docs/probe_ledger.json，与 brief/runbook/probe_backlog 文档不一致（已合并）"
 }

@@ -10,16 +10,68 @@ if str(ROOT) not in sys.path:
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
+import platform
 
 from app.views.main_window import MainWindow
+
+# T1: platform-aware CJK font fallback chain.
+# Windows: Microsoft YaHei UI -> SimSun ; Linux: Noto Sans CJK SC -> Droid Sans Fallback.
+_FONT_CHAIN = {
+    "Windows": ["Microsoft YaHei UI", "Microsoft YaHei", "SimSun", "SimHei"],
+    "Linux": ["Noto Sans CJK SC", "Noto Sans CJK TC", "Droid Sans Fallback",
+              "AR PL UMing CN", "WenQuanYi Micro Hei"],
+    "Darwin": ["PingFang SC", "Hiragino Sans GB", "STHeiti"],
+}
+
+
+def pick_cjk_font(app: QApplication) -> str:
+    """Return the first available family in the platform CJK chain (else first entry)."""
+    chain = _FONT_CHAIN.get(platform.system(), _FONT_CHAIN["Linux"])
+    try:
+        db = QFontDatabase()
+        fams = set(db.families())
+    except Exception:
+        fams = set()
+    for name in chain:
+        if name in fams:
+            return name
+    return chain[0]
+
+
+def _image_density(path: Path) -> float:
+    """Bytes-per-pixel of a saved PNG (proxy for text-rendering density)."""
+    try:
+        from PIL import Image
+        im = Image.open(path)
+        w, h = im.size
+        if w * h == 0:
+            return 0.0
+        return path.stat().st_size / float(w * h)
+    except Exception:
+        return -1.0
+
+
+def self_check_shot(path: Path, label: str = "") -> None:
+    """Post-generation tofu/blank self-check: warn if density is abnormally low."""
+    d = _image_density(path)
+    if d < 0:
+        print(f"[font-selfcheck] {label or path.name}: 无法读取图像密度（PIL 缺失？）")
+        return
+    if d < 0.02:
+        print(f"[font-selfcheck] WARN {label or path.name}: 密度 {d:.4f} B/px 过低，"
+              f"疑似文字渲染为方框或空白（健康 GUI 截图约 0.02-0.18 B/px）")
+    else:
+        print(f"[font-selfcheck] ok {label or path.name}: 密度 {d:.4f} B/px")
+
 
 
 def save_shot(window: MainWindow, path: Path) -> None:
     window.show()
     QApplication.processEvents()
     window.grab().save(str(path))
+    self_check_shot(path, label=path.name)
 
 
 def point_to_result_root(window: MainWindow, result_root: Path) -> None:
@@ -45,7 +97,9 @@ def main() -> int:
     # Windows UI font: other platforms fall back to their own fonts, so the
     # committed release screenshots must be regenerated on Windows. Use --out
     # to write review copies elsewhere (e.g. install_logs/) on Linux.
-    app.setFont(QFont("Microsoft YaHei UI", 9))
+    _font = pick_cjk_font(app)
+    print(f"[font] 使用 CJK 字体: {_font}（平台 {platform.system()}）")
+    app.setFont(QFont(_font, 9))
     window = MainWindow(ROOT)
     result_root = ROOT / "install_logs" / "audit_standard_tests_report2"
     point_to_result_root(window, result_root)

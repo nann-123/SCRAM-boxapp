@@ -1,12 +1,12 @@
 # SCRAM BoxApp Bug 追踪表
 
-> 创建日期: 2026-07-23 | 最后更新: 2026-09-10 | 新增 #10 截图文字全为方框（文档资产不可用）
+> 创建日期: 2026-07-23 | 最后更新: 2026-09-11 | 本轮新增 #11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
 
 ## 修复状态
 
 | # | 严重性 | 类别 | 状态 | 验证结果 |
 |---|--------|------|------|---------|
-| 1 | 🔴 P0 | 初始化 | ❌ 未修复 | `tag_init=0` 方案不可行（cfg 解析时 bin_values 已定型），需改 `default_config.cfg` 或模板系统支持 per-species mass |
+| 1 | 🔴 P0 | 初始化 | 🔄 已转自动复核（agent 权衡，2026-09-11） | 原 ❌ 未修复。2026-09-11 复核：触发条件（`base="default"` 的零质量骨架）**在应用里已不可达**——`c9b6310`（2026-07-27）把 `tutorial_minimal`/`gmd_hazy_condensation`/`gmd_hazy_coag_cond` 三个模板的基座从 `default` 改为 `teaching`（examples 配置，非零初值），实测 `tutorial_minimal` 终态质量 0.00148 = 手册基准，不再是 0。已备**夹具对** `docs/checktest/zero_initial_mass_{test,fixed}.cfg`（同结构，仅第 1 个物质第 1 个 bin 初值不同）与**自动判据**（`collect_metrics.py`：status=ok 且质量为 0 → 报警）。待 agent 按 hunt_plan Q-13 权衡"是否仍需修改/如何改"，并回答当年切基座时留下的疑点（Q-14：teaching 物种是否适合 GMD 冷凝验证） |
 | 2 | 🔴 P2 | 凝并 | ❌ P2 待定 | 需重编译 Fortran |
 | 3 | 🟡 P0 | 运行 | ✅ 已修复 | `Simulation Time 1800s`（原 43200s） |
 | 4 | 🟡 P1 | 初始化 | ✅ 已修复 | `Fixed Density 1.8E-6`（原 NaN） |
@@ -14,8 +14,9 @@
 | 6 | 🟡 P1 | 绘图 | ✅ 已修复 | `generate_all()` 不再传错参 |
 | 7 | 🔴 P2 | 重分配 | ❌ P2 待定 | 需重编译 Fortran；非零质量也会触发，见 #7.1 |
 | 8 | 🟡 P1 | 运行 | ✅ 已修复 | gmd_hazy 正确检测为 `failed`（原误报 `ok`） |
-| 9 | 🔴 P1 | 初始化 | ❌ 未修复 | nucl_model=5 跳过行后文件位置错位，需补 dummy read |
+| 9 | 🔴 P1 | 初始化 | ✅ 已修复（2026-09-11） | 已套用 `proposals/bug9_nucl_model5_file_pointer.patch`（nucl_model=5 时无条件读入那 3 行，不再跳过却不消费）；新核心 md5 `fb020540` 实测：标准格式（56 行）配置**跑通**，初始总质量 `226.07444159907240` 与 2026-07-27 记录一致；手工删行的 53 行版本作废（可留作负对照，补丁后应报错）。现行报错文本为 `Bad integer for item 1`（与 7 月记录的 `Bad real number in item 8` 不同） |
 | 10 | 🟡 P1 | 文档资产 | ❌ 未修复 | **界面截图类资产共 24 张的密度异常**：`docs/screenshots/`（9）、`docs/user_manual_zh_assets/screenshots/`（8）、`docs/undergrad_lab_assets/`（8）文字全渲染为方框（中英文皆然）；被根 `README.md`、用户手册与教学手册引用。需在有字体的 Windows 上按 §7 重生成，并给生成脚本加字体可用性检查 |
+| 11 | 🟠 P1 | 运行 | ✅ 已修复（2026-09-11） | 预设改为"建议值"：显式设置优先——`run_service.prepare_run/_with_case_preset` 接受 `explicit_keys`（须在 normalize 之前取出，normalize 只保留固定键）；GUI `_collect_data` 把"与当前预设建议值不同"的键标为显式；`probe_cell --set` 的键自动标记。验证：① `noop_probe.py --template tutorial_minimal` 关掉凝并后终态数量变化 5.3e-3（此前报"覆写未生效"）；② 完整标准测试数值**逐位**与基线一致（EXT 33.7511 / INT 32.7338，540/88 步，五项 smoke 全过）→ 行为保持 |
 
 ## Bug 总览
 
@@ -180,6 +181,19 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 | **表现** | 截图中所有文字渲染成 □□□□——**中英文都是**，界面只剩空控件框；手册与 README 的界面示意图变成不可读 |
 | **影响面** | 根 `README.md`、`docs/SCRAM_BoxApp_中文用户操作手册.md`、`docs/SCRAM_BoxApp_本科教学实验手册.md` 都引用这些界面图；学生对照手册看界面时无法使用（约 25 处引用） |
 | **证据** | ① 目视 `main_zh.png` / `main_en.png`：满屏方框（中英文皆然）；② `python scripts/linux/check_assets.py --render` 自动判定 **9/9 张坏图**——仓库内资产密度仅为同场景新鲜渲染的 4%–35%（如 `main_zh` 0.0115 vs 0.1242），该对比还抓到了密度启发式漏掉的 `results_view.png`（35%）；③ 密度异常共 24 张（三个目录各 8 张）；④ 截图生成于 `d8e539b`（2026-07-22），而 `app/` 之后在 `c9b6310`（2026-07-27）又改过 → 按 devkit §7 判据同时已过期 |
-| **修复方向** | ① 生成前检查字体可用性（`QFontDatabase.families()` 是否含目标字体或 CJK 覆盖），不满足则直接失败并提示安装字体；② `setFont` 改为带回退链（Windows: Microsoft YaHei UI → SimSun；Linux: Noto Sans CJK SC）；③ 生成后自检（渲染已知文本，宽度等于缺字宽度即判为方框）；④ 在有字体的 Windows 上重生成截图并同步替换三处目录的资产与手册引用；⑤ 为手册资产补一个生成/同步脚本（当前靠人工拷贝），在 §7 触发（改了 GUI）时生成对比图，人工确认后替换 |
+| **修复方向** | ① 生成前检查字体可用性（`QFontDatabase.families()` 是否含目标字体或 CJK 覆盖），不满足则直接失败并提示安装字体；② `setFont` 改为带回退链（Windows: Microsoft YaHei UI → SimSun；Linux: Noto Sans CJK SC）；③ 生成后自检（渲染已知文本，宽度等于缺字宽度即判为方框）；④ 在有字体的 Windows 上重生成截图并同步替换三处目录的资产与手册引用——**2026-09-11 人工决定：暂缓，待 Windows 有空时执行**；⑤ 为手册资产补一个生成/同步脚本（当前靠人工拷贝），在 §7 触发（改了 GUI）时生成对比图，人工确认后替换 |
 | **测试配置** | `python scripts/capture_screenshots.py --out install_logs/shots`，校验产物非方框后与 `docs/screenshots/` 对照 |
-| **备注** | 由"资产过期检查"发现（`app/` 最后改动时间晚于截图生成时间）；属探测类 P9「资产完整性」的首个实例。P9 已接入 `auto_round.sh` 每轮自动跑（`scripts/linux/check_assets.py`），修复前每轮都会报 WARN，直到本 Bug 关闭 |
+| **备注** | 由"资产过期检查"发现（`app/` 最后改动时间晚于截图生成时间）；属探测类 P9「资产完整性」的首个实例。P9 已接入 `auto_round.sh` 每轮自动跑（`scripts/linux/check_assets.py`）。**2026-09-11 状态更新**：①③⑤ 已落地（`scripts/capture_screenshots.py` 字体回退链 + 生成后密度自检；`scripts/linux/sync_manual_assets.py` 漂移检查，默认 dry-run）；④ 按人工决定暂缓；P9 已把本 Bug 相关告警归入「已知项」单独计数——每轮 digest 显示 `WARN（仅已知项）`，只有出现**新**告警才显示 `WARN（有新增）`。**数量复核**：密度阈值抓到 24 张，`--render` 对比另判 `results_view.png` 为坏图（密度仅为同场景新渲染的 35%，属部分缺字），故 Windows 重生成时请按 **9+8+8=25 张**全量处理 |
+
+### Bug #11: Case Preset 在运行路径上静默覆盖过程开关与运行时长
+
+| 项目 | 内容 |
+|------|------|
+| **位置** | `app/services/run_service.py:308-315`（`_with_case_preset`）与调用点 `app/services/run_service.py:97-101`（`prepare_run`）。调用点上方注释（第 93-94 行）写的是 "Normalize without forcing preset values / the user may override them"，与代码实际行为相反 |
+| **触发条件** | 任何带 `case_preset` 的配置（模板都自带）走 `prepare_run`：先套预设、再序列化 cfg，调用方设置的开关/时长已被预设覆盖 |
+| **表现** | ① **用户可见**：GUI 里取消"启用凝并"（或改"模拟时长"）后运行，仍按 Case Preset 的过程与时长执行——用户设置被静默忽略；② **调试证据面**：`probe_cell.py --set with_coag=0` / `with_cond=1` / `duration_hours=…` 不生效，生成 cfg 仍是预设值，探测结论变成"什么都没测到"却记为 clean |
+| **影响面** | 用户可见（GUI 过程开关与时长）；调试证据面：2026-09-10/11 期间凡用 `--set` 改这三个开关或时长的探测格，其"干净"结论不成立，需用加了校验的工具重探；与 Bug #3（2026-07-22 标 ✅ 已修复）同源——原修复只覆盖了 GUI 的"载入预设"路径，运行路径仍在强制套用 |
+| **证据** | ① 代码：`_with_case_preset` 对四个键无条件赋值；② 复现：`.venv/bin/python scripts/linux/probe_cell.py --template tutorial_minimal --set with_coag=0` → `~/.cache/scram_boxapp_mixing/generated_configs/tutorial_minimal_internal_mixing.cfg` 第 2 行仍为 `1 ## coagulation switch`；`--set with_cond=1` 同样仍为 0；③ 对照：`--set dtmin_seconds=2` 正常落地（该键不受预设管制）→ 证明不是"所有覆写都无效"，而是被预设管制的四个键 |
+| **修复方向** | ① `_with_case_preset` 仅在调用方**未显式设置**该键时填预设值（可加 `data["explicit_keys"]` 或比较 GUI 当前值）；或 ② 只在用户显式"载入预设"时套用、运行时不覆盖；③ 加回归测试：翻转任一过程开关后终态质量/数量必须改变——判据已由 `scripts/linux/noop_probe.py` 实现，修好后应全部报"有效" |
+| **测试配置** | `.venv/bin/python scripts/linux/noop_probe.py --template tutorial_minimal`（现在报"覆写未生效：生成 cfg 里该开关仍为 1"；修复后应报"被检查的开关都真实起作用"） |
+| **备注** | 由新增的"空转探测"工具（`scripts/linux/noop_probe.py`）首次运行即发现；`probe_cell.py` 已加"覆写落地校验"（跑完核对生成 cfg），此后同类静默丢弃会直接报错并计入 findings，不会再被误记为 clean |

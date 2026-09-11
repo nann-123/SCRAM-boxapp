@@ -24,7 +24,9 @@ from datetime import date
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-LEDGER = ROOT / "docs" / "probe_ledger.json"
+# 2026-09-11 统一：此前误写 docs/probe_ledger.json，与 brief/runbook/probe_backlog 指向的
+# docs/linux_debugging/probe_ledger.json 分叉（人工复盘会看错文件、Windows 口径守卫也会误报）
+LEDGER = ROOT / "docs" / "linux_debugging" / "probe_ledger.json"
 SRC = ROOT / "core" / "executables_or_wrappers" / "runtime" / "windows" / "source" / "SCRAM1.1" / "SRC"
 APP = ROOT / "app"
 

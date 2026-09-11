@@ -107,7 +107,9 @@ if [ "$TIER" = "deep" ]; then
   "$PY" scripts/run_pipeline.py > "$ROUND/pipeline.log" 2>&1
   echo "-- 流水线退出码=$?"
   # 把最新结果图另存一份，便于与 docs/*_assets 的手册图对比（手册图目前靠人工拷贝）
-  RESULTS="$(ls -dt "$HOME"/.local/state/scram_boxapp_mixing/results/*/*/figures 2>/dev/null | head -1)"
+  # 注意实际布局是 results/<实验名>/figures；旧写法 results/*/*/figures 深度不匹配，会静默取空
+  RESULTS="$(ls -dt "$HOME"/.local/state/scram_boxapp_mixing/results/*/figures \
+                      "$HOME"/.local/state/scram_boxapp_mixing/results/*/*/figures 2>/dev/null | head -1)"
   if [ -n "$RESULTS" ]; then
     mkdir -p "$ROUND/figures" && cp -f "$RESULTS"/*.png "$ROUND/figures/" 2>/dev/null
     echo "-- 已另存结果图 $(ls -1 "$ROUND/figures" 2>/dev/null | wc -l) 张到 figures/（供与 docs/*_assets 对比）"
@@ -131,10 +133,16 @@ fi
 # --- Phase 3.5: 资产完整性（P9）---------------------------------------------
 "$PY" scripts/linux/check_assets.py > "$ROUND/asset_check.log" 2>&1
 ASSETS=$?
-echo "-- 资产检查退出码=$ASSETS（0=干净 1=告警 2=硬失败，见 asset_check.log）"
+echo "-- 资产检查退出码=$ASSETS（0=干净 3=仅已知项 1=有新增告警 2=硬失败，见 asset_check.log）"
 
 # --- Phase 4: 指标采集与对比 -------------------------------------------------
-"$PY" scripts/linux/collect_metrics.py --round-dir "$ROUND" > "$ROUND/metrics.log" 2>&1
+# deep 轮额外与「最近一次 deep 轮的基线」对比：同层级、同案例才可比，否则只打印 INFO 不告警
+if [ "$TIER" = "deep" ]; then
+  "$PY" scripts/linux/collect_metrics.py --round-dir "$ROUND" \
+      --deep-baseline "$ROOT/install_logs/auto/deep_baseline.json" > "$ROUND/metrics.log" 2>&1
+else
+  "$PY" scripts/linux/collect_metrics.py --round-dir "$ROUND" > "$ROUND/metrics.log" 2>&1
+fi
 METRICS=$?
 sed 's/^/   /' "$ROUND/metrics.log" | tail -12
 
@@ -145,7 +153,7 @@ sed 's/^/   /' "$ROUND/metrics.log" | tail -12
   echo "- 构建模式：$MODE　签名：$SIG"
   echo "- §7 截图触发：$([ "$SHOTS" = 99 ] && echo 否 || echo 是（生成码 $SHOTS）)"
   echo "- 核心 md5：$MD5"
-  echo "- 守卫退出码：$PARITY　构建退出码：$BUILD　指标结论码：$METRICS　资产检查码：$ASSETS"
+  echo "- 守卫退出码：$PARITY　构建退出码：$BUILD　指标结论码：$METRICS　资产检查码：$ASSETS（0/3/1/2＝干净/仅已知项/有新增/硬失败）"
   echo
   echo "## 指标"; echo; echo '```text'; cat "$ROUND/metrics.log"; echo '```'
   echo; echo "## 资产完整性（P9）"; echo; echo '```text'; cat "$ROUND/asset_check.log"; echo '```'
@@ -167,13 +175,19 @@ sed 's/^/   /' "$ROUND/metrics.log" | tail -12
   echo "（agent 在此列出，或写“无”）"
 } > "$ROUND/summary.md"
 
-VERDICT="PASS"; [ "$METRICS" -eq 1 ] && VERDICT="WARN"; [ "$METRICS" -eq 2 ] && VERDICT="FAIL"
-[ "$ASSETS" -eq 1 ] && VERDICT="WARN"; [ "$ASSETS" -eq 2 ] && VERDICT="FAIL"
+VERDICT="PASS"; NEW_ISSUE=""
+[ "$METRICS" -eq 1 ] && { VERDICT="WARN"; NEW_ISSUE="有新增"; }
+[ "$METRICS" -eq 2 ] && VERDICT="FAIL"
+[ "$ASSETS" -eq 1 ] && { VERDICT="WARN"; NEW_ISSUE="有新增"; }
+[ "$ASSETS" -eq 2 ] && VERDICT="FAIL"
+# 资产检查码 3 = 只有已登记的已知项（如 Bug #10：发布截图待 Windows 重生成）：仍记 WARN，
+# 但标注「仅已知项」——否则同一个老问题每轮都报，会把结论栏淹没到看不出本轮有没有新问题
+if [ "$ASSETS" -eq 3 ] && [ "$VERDICT" = "PASS" ]; then VERDICT="WARN"; NEW_ISSUE="仅已知项"; fi
 [ "$SHOTS" -ne 99 ] && [ "$SHOTS" -ne 0 ] && VERDICT="WARN"
 [ "$BUILD" -ne 0 ] && VERDICT="FAIL"
 [ "$PARITY" -ge 2 ] && VERDICT="FAIL"
-printf -- "- %s | %s | %s | 守卫=%s 构建=%s 资产=%s | 详见 auto/%s/summary.md\n" \
-  "$STAMP" "$TIER" "$VERDICT" "$PARITY" "$BUILD" "$ASSETS" "$STAMP" >> "$ROOT/install_logs/auto/digest.md"
+printf -- "- %s | %s | %s%s | 守卫=%s 构建=%s 资产=%s | 详见 auto/%s/summary.md\n" \
+  "$STAMP" "$TIER" "$VERDICT" "${NEW_ISSUE:+（$NEW_ISSUE）}" "$PARITY" "$BUILD" "$ASSETS" "$STAMP" >> "$ROOT/install_logs/auto/digest.md"
 ln -sfn "$STAMP" "$ROOT/install_logs/auto/latest"
 
 # 成功（或仅警告）时记录签名，避免下轮重复同样的工作
@@ -183,9 +197,22 @@ if [ "$VERDICT" != "FAIL" ]; then echo "$SIG" > "$ROOT/install_logs/auto/.last_s
 KEEP_ROUNDS="${KEEP_ROUNDS:-7}"
 # ① 逐时步 CSV 很大，但指标已提取进 baseline.json，故每轮结束后删掉 runs/（保留 CSV 汇总与图）
 rm -rf "$ROUND/standard_tests/runs" "$ROUND/quick_test/runs" 2>/dev/null
+# ①b deep 轮基线单独留一份：否则轮次目录被 ② 清理后，下一轮 deep 就失去"同层级可比"的基准
+if [ "$TIER" = "deep" ] && [ -f "$ROUND/baseline.json" ]; then
+  cp -f "$ROUND/baseline.json" "$ROOT/install_logs/auto/deep_baseline.json"
+fi
 # ② 只保留最近 KEEP_ROUNDS 轮（按目录名排序，latest 是符号链接不参与）
-find "$ROOT/install_logs/auto" -maxdepth 1 -type d -name '20*' 2>/dev/null | sort -r \
-  | tail -n +$((KEEP_ROUNDS + 1)) | xargs -r rm -rf
+PRUNED="$(find "$ROOT/install_logs/auto" -maxdepth 1 -type d -name '20*' 2>/dev/null | sort -r \
+  | tail -n +$((KEEP_ROUNDS + 1)))"
+if [ -n "$PRUNED" ]; then
+  printf '%s\n' "$PRUNED" | xargs -r rm -rf
+  # 被清理的轮次在 digest 里就地标注，避免"详见 auto/<ts>/summary.md"变成死链
+  for d in $PRUNED; do
+    ts="$(basename "$d")"
+    sed -i "s|详见 auto/$ts/summary.md|详见 auto/$ts/summary.md（已按体积纪律清理）|g" \
+      "$ROOT/install_logs/auto/digest.md"
+  done
+fi
 ROUNDS_LEFT="$(find "$ROOT/install_logs/auto" -maxdepth 1 -type d -name '20*' 2>/dev/null | wc -l)"
 AUTO_SIZE="$(du -sh "$ROOT/install_logs/auto" 2>/dev/null | cut -f1)"
 echo "-- 体积纪律：保留最近 $KEEP_ROUNDS 轮（现存 $ROUNDS_LEFT 轮，auto/ 共 $AUTO_SIZE）"

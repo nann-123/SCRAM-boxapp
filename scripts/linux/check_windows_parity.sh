@@ -75,11 +75,18 @@ if [ -z "$CHANGED" ]; then
 else
   printf '%s\n' "$CHANGED" | sed 's/^/             /'
   # 允许 Linux 侧自由改动的路径
-  ALLOWED='^(install_logs/|dist/|docs/(checktest|linux_debugging/|BUG_TRACKING\.md)|scripts/linux/|core/executables_or_wrappers/runtime/linux/)'
+  ALLOWED='^(install_logs/|dist/|proposals/|docs/(checktest|linux_debugging/|BUG_TRACKING\.md)|scripts/linux/|core/executables_or_wrappers/runtime/linux/)'
   OUTSIDE="$(printf '%s\n' "$CHANGED" | grep -vE "$ALLOWED" || true)"
   if [ -n "$OUTSIDE" ]; then
     warn "以下改动在 Linux 侧「允许集合」之外，需人工确认是否影响 Windows 发布口径："
     printf '%s\n' "$OUTSIDE" | sed 's/^/             /'
+  fi
+  # 删除保护（2026-09-11）：install_logs/ 之外的删除一律硬失败。体积纪律只允许清理
+  # install_logs/；历史结果、源码、发布资产被误删不可逆（agent 具备 rm -rf 能力）。
+  DELETED="$(git status --porcelain | awk '$1 ~ /D/ {print $NF}' | grep -vE '^install_logs/' || true)"
+  if [ -n "$DELETED" ]; then
+    fail "install_logs/ 之外出现删除（体积纪律只允许清理 install_logs/）："
+    printf '%s\n' "$DELETED" | sed 's/^/             /'
   fi
 fi
 

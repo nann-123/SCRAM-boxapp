@@ -701,6 +701,21 @@ class MainWindow(QMainWindow):
                 data["scalars"][key] = widget.value()
             elif isinstance(widget, QDoubleSpinBox):
                 data["scalars"][key] = widget.value()
+        # Bug #11 修复（2026-09-11）：把与当前 Case Preset 建议值不同的键标记为"显式"，
+        # 运行时不会被预设覆盖——用户改过开关/时长，就按用户的跑；与预设一致时不标记，
+        # 保持原有行为（选了预设即套用其过程与时长）。
+        preset = CASE_PRESETS.get(str(data.get("case_preset", "")))
+        if preset:
+            explicit = {str(k) for k in data.get("explicit_keys", [])}
+            for key, preset_key in (("with_coag", "with_coag"), ("with_cond", "with_cond"),
+                                    ("with_nucl", "with_nucl"), ("final_time_hours", "duration_hours")):
+                try:
+                    if abs(float(data["scalars"][key]) - float(preset[preset_key])) > 1e-9:
+                        explicit.add(key)
+                except (KeyError, TypeError, ValueError):
+                    explicit.add(key)
+            if explicit:
+                data["explicit_keys"] = sorted(explicit)
         data["scalars"]["n_species"] = self.n_species_spin.value()
         data["scalars"]["n_sizebin"] = self.n_sizebin_spin.value()
         data["scalars"]["n_frac"] = self.n_frac_spin.value()
