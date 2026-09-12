@@ -1,0 +1,43 @@
+# Bug #12 修复提案（方案 A 最小骨架）：让 Fortran 真正读取 SCRAM_RDB_CORE_CONSERV
+#
+# 背景：app 把 redistribution_option 映射为 int（legacy=0/core_conserv=1/core_nogrow=2/core_smallgrow=3）
+#       后只放进环境变量 SCRAM_RDB_CORE_CONSERV / SCRAM_RDB_CORE_CONSERV_NAME（run_service.py:122-123），
+#       但 ModuleCoeffRepartitionBoxmodel.f90 的 coeff_boxmodel_init 从不读取这两个 env，
+#       导致 GUI 的 RDB 核心模式选择器是死控件（四值终态逐位相同）。
+#
+# 本 patch 只做"接线"：新增模块变量 + 读取 env + 解析为 0-3 的整数。
+# 真正的 RDB 核心模式物理分支（legacy/core_conserv/core_nogrow/core_smallgrow 各自的重分配算法）
+# 在现有 Fortran 中并不存在，需人工设计后在 coeff 重分配主循环中按 coeff_rdb_core_mode 分支。
+# 因此本 patch 是骨架，未编译验证；应用前必须人工补全物理分支并回归。
+#
+# 应用方式：git apply proposals/bug12_rdb_core_mode_dead.patch
+# 验证判据：修复后 docs/checktest/redistribution_option_dead_{test,fixed}.cfg 应产生不同终态；
+#           gmd_paris_full 四值 redistribution_option 终态应不再逐位相同。
+--- a/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleCoeffRepartitionBoxmodel.f90	2026-09-12 09:32:39.230331505 +0800
++++ b/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleCoeffRepartitionBoxmodel.f90	2026-09-12 09:32:39.242331269 +0800
+@@ -24,6 +24,9 @@
+   double precision, parameter :: COEFF_LCP_LAMBDA_F = 1.d0
+ 
+   integer :: coeff_repartition_mode = COEFF_REPARTITION_LEGACY
++  ! Bug #12: RDB 核心模式 legacy=0/core_conserv=1/core_nogrow=2/core_smallgrow=3，
++  ! 由 env SCRAM_RDB_CORE_CONSERV 提供；默认 1（core_conserv，与 app 默认一致）
++  integer :: coeff_rdb_core_mode = 1
+   integer :: coeff_cache_mode = COEFF_CACHE_ALWAYS_REBUILD
+   integer :: coeff_step_index = 0
+   integer :: coeff_active_bins = 0
+@@ -102,6 +105,15 @@
+       coeff_repartition_mode = COEFF_REPARTITION_LEGACY
+     endif
+ 
++    ! Bug #12: 读取 RDB 核心模式（app 经 SCRAM_RDB_CORE_CONSERV 传递 0-3）
++    call get_environment_variable('SCRAM_RDB_CORE_CONSERV', env_value, status=stat)
++    if (stat == 0) then
++      read(env_value, *, iostat=stat) coeff_rdb_core_mode
++      if (stat /= 0 .or. coeff_rdb_core_mode < 0 .or. coeff_rdb_core_mode > 3) then
++        coeff_rdb_core_mode = 1
++      endif
++    endif
++
+     call get_environment_variable('SCRAM_COEFF_CACHE_MODE', env_value, status=stat)
+     if (stat == 0) then
+       call coeff_parse_cache_mode(trim(env_value))

@@ -46,12 +46,82 @@
      - 新 Bug 一经确认，立即转成回归资产：docs/checktest/<bug>_test.cfg（可复现）
        + <bug>_fixed.cfg（对照）+ BUG_TRACKING 新增一行 + 判据并入 metrics 脚本。
 
+  2.5【每轮】跑模板体检：`.venv/bin/python scripts/linux/template_audit.py`
+     —— 7 个模板逐个断言：status 必须 ok、日志无致命关键字、**开了的过程必须真的起作用**
+     （`with_cond=1` 且气相>0 ⇒ `Mass Cond>0`；无气相源 ⇒ 记"教学骨架"信号）。
+     出现"需处理"就按 BUG_TRACKING 字段登记。这是"开关开了但空转/崩溃"这一整类问题的常规探针
+     （2026-09-12 靠它把 `gmd_hazy_coag_cond` 的失败与 teaching 基座的冷凝空转一次问清）。
+
   3. 打开本轮 install_logs/auto/latest/summary.md，把其中 TODO 段补齐：
      - 未决 Bug 复现结论（BUG_TRACKING 里 ❌ 的条目：编号/仍复现或已消失/证据）
      - 指标异常项逐条解释
      - 待人工确认事项
 
   4. 核心算法（SRC/*.f90）的问题只产出 patch 到 proposals/，不要直接改
+
+【本轮起的调试重点（2026-09-12 重新定靶；优先级从上到下，做完再往下）】
+  ★ 背景（先读，避免重复劳动）：核心数值代码与本体 `~/SCRAM1.1` 基本逐字节一致
+    （`euler_coupled/redist_euler/euler_mass/hemen/ModuleThermodynamics/isorropia` 全部一致），
+    所以**核心里的"bug"绝大多数是本体固有行为**（#2/#5/#7/#14、log10(0)、RH 跳变、冷凝 no-op…），
+    改它既违反守卫（§1：runtime/windows 源码不得由 Linux 侧改），也不是本项目的交付目标。
+    移植层真正的风险面只有一个：**"用户能点/能配的东西，核心到底认不认"**。
+
+  P1 **接口契约体检**（主战场）：`.venv/bin/python scripts/linux/config_roundtrip.py`
+     —— 自动比对 app 送出的 env vs 核心读取的 env（差集=死控件）、cfg 读序 vs 本体、
+     GUI 字段 vs cfg 写出行。当前已知硬伤：`SCRAM_RDB_CORE_CONSERV(_NAME)` 死控件（Bug #12）、
+     `mapping_scheme` 标量无效（Bug #15）。**每轮跑一次，并把新发现按 BUG_TRACKING 字段登记。**
+     同类历史缺陷：#11（预设静默覆盖）、#1（基座零质量）——这一类是本项目唯一反复复发的病。
+
+  P2 **模板体检**：`.venv/bin/python scripts/linux/template_audit.py`（每轮，已接）
+     —— 断言每个模板 status=ok、无致命关键字、**开了的过程必须真的起作用**。
+     当前待处理：两个 hazy 教学模板"冷凝空转"（有气相、Mass Cond=0，Q-18，需领域判断）。
+
+  P3 **系数库链路**（研究关键，最优先的"未知"）：
+     事实：`SCRAM_COEFF_REPARTITION_MODE=LEGACY` 换系数库会跑挂（aero=0、exit=2）；
+     而 `COAG_TARGET_NEAREST` 换库结果**逐位相同**（`ModuleCoeffRepartitionBoxmodel.f90` 里零个 `nf90` 调用）。
+     要回答的是：新路径是"设计上就用运行期几何映射、不查表"，还是**漏接了系数库**？
+     判据：能让"系数库内容变化 ⇒ 终态变化"，或能从代码/文档证明新路径不依赖库。
+     证据留存：`install_logs/auto/coeftest/`（4 组对照）。
+
+  P4 **移植保真度**：同一 cfg 跑本体 exe 与仓库 exe，比总质量/数量
+     （手工已跑通：总质量逐位一致 `36.489297208418`，气溶胶质量相对差 1.4e-5，源于 `-g` vs `-O2`）。
+     建议脚本化（`fidelity_check.py`）并挂进 deep 轮——这是"Windows 化"的核心验收指标。
+
+  P5 Windows 侧清单（截图/字体/打包）：只跟踪状态、登记，**不要尝试在 Linux 上生成发布资产**。
+
+【禁止事项（2026-09-12 新增）】
+  · 不要改 `core/executables_or_wrappers/runtime/windows/` 下的任何源码或二进制（守卫 §1 会判硬失败）；
+    核心问题一律产出 `proposals/` 补丁，由人工/Windows 侧落盘。
+  · 不要给**上游固有行为**写补丁（#7 那类：本体里同样如此）。要用它就去打已验证的补丁，
+    否则改 app 侧默认值（例：教学模板 `redistribution_method` 默认已由 6 改回 2，GUI 仍可手选 6）。
+  · 不要把上游项计入发布闸门（见下）；不要并行跑探测与轮次（共享 staged runtime/RESULT 会串数据）。
+
+【验收判据（release gate，2026-09-12 修定）】
+  gate = **移植层（标签 `port`）新增=0** + 模板体检 0 处"需处理" + 契约体检无硬伤
+         + 保真度达标（总质量一致、气溶胶质量差 ≤1e-5）+ Windows 侧清单通过。
+  **上游项（标签 `upstream`）不计入 gate**，只在 BUG_TRACKING 里记录+说明。
+
+【铁律：定位优先 / 反证可达 / 止损（2026-09-12 人工复核新增；违反＝白跑一轮）】
+  A. **先定位，再补丁**。浮点异常 / NaN / 非守恒类问题，必须先用插桩拿到 `文件:行` 再谈补丁：
+     ① `cp -a` 源码树到 `/tmp/<tag>/`（或 `install_logs/mutants/<tag>/`），**不要动仓库运行时**；
+     ② 在副本 `SConstruct` 的 `debug_flags` 里加 `-ffpe-trap=zero,invalid,overflow -fbacktrace`，
+        再 `FC=gfortran CC=gcc scons mode=debug`；
+     ③ `SCRAM_PROGRAMSCRAM=<副本 exe> .venv/bin/python scripts/linux/probe_cell.py …` →
+        `run.log` 会直接给出**第一个**浮点异常的 `SRC/xxx.f90:行号` + 调用栈（不必再猜）。
+     没拿到行号之前**禁止**提交 guard 类补丁。2026-09-12 为此白跑三轮（Q-15 的 v1/v2/v3 全打在
+     不可达的几何分母上，真实原因是重复交付 + 另一处的 `log10(0)`，一次陷阱构建就定位了）。
+  B. **反证判据先验可达性**。写 guard 前先证明该条件在本相位**可能为真**（打印或推演均可）；
+     若条件恒假（例：本相位 `kloc(k)≡1`，而 v2/v3 的 guard 都要求 `kloc(k)>1`），
+     "变异结果与 stock 逐位相同"是**必然**结果，不构成反证。patch 提案必须写明条件可达性。
+  C. **止损**。同一个 Bug 连续 2 轮没有新证据/新行号 → 换方法或标"阻塞-需人工"；
+     禁止连续 3 轮做同一类补丁尝试。
+  D. **结论三分类**（日志/指标）：致命（Fortran STOP / 信号 / NaN）→ failed；
+     浮点标志（`IEEE_*`，程序继续）→ 只报信号；信息性打印（交付前的中间量不守恒）→ 不算信号。
+     `probe_cell`/`run_service` 已按此分类，别再拿 IEEE 标志当失败证据。
+  E. **工具已更新（2026-09-12）**：`auto_round.sh` 签名只看 `app/ core/ scripts/`（文档/提案不再让轮次"变新"、
+     不再丢基线对比）；`probe_cell` 分开致命关键字与浮点标志；`fuzz_invariants.py` 修掉了"覆写被预设静默吞掉"
+     的缺陷，并新增「覆写落地校验」「全关时终态=初态+发射」「逐组保留可审计证据」。
+     跑模糊测试时**先看 signals**（数量变化等），不要只看 PASS/FAIL。
 
 【三条触发规则（照 devkit §6/§7/§8，别弄混）】
   · §6 标准测试：每次改代码后都要做 → 每轮都跑（auto_round 已内置）

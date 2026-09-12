@@ -8,7 +8,7 @@
 #   standard  常规回归（建议每小时）：守卫 + 增量构建 + 快速测试 + 指标对比
 #   deep      深度轮次（建议每晚）：再叠加完整标准测试 + 端到端流水线 + 候选探测清单
 #
-# 签名 = commit + 核心二进制 md5 + 工作区状态哈希。签名未变且非 deep 时跳过本轮
+# 签名 = commit + 核心二进制 md5 + 产品面（app/core/scripts）工作区哈希。签名未变且非 deep 时跳过本轮
 # （这是防止"机械重复跑同样的测试"的机制；--force 可强制跑）。
 #
 # 产出：install_logs/auto/<YYYYmmdd-HHMM>/（见各 Phase）与滚动的 install_logs/auto/digest.md
@@ -40,7 +40,9 @@ PY="$ROOT/.venv/bin/python"
 EXE="$ROOT/core/executables_or_wrappers/runtime/linux/ProgramSCRAM"
 
 # --- 轮次签名：无变化则跳过（deep 除外）-------------------------------------
-SIG="$(git rev-parse --short HEAD)-$(md5sum "$EXE" 2>/dev/null | cut -c1-8)-$(git status --porcelain | md5sum | cut -c1-8)"
+# 签名第三段只看「产品面」改动（app/ core/ scripts/）。docs/ 与 proposals/ 不计入：
+# 否则 agent 自己 git add 文档就会让轮次"变新"——白跑构建、还丢掉与上一轮的基线对比（2026-09-12 复核 §0.4-2）。
+SIG="$(git rev-parse --short HEAD)-$(md5sum "$EXE" 2>/dev/null | cut -c1-8)-$(git status --porcelain -- app core scripts | md5sum | cut -c1-8)"
 LAST="$(cat "$ROOT/install_logs/auto/.last_signature" 2>/dev/null || echo none)"
 if [ "$SIG" = "$LAST" ] && [ "$FORCE" -eq 0 ] && [ "$TIER" != "deep" ]; then
   rmdir "$ROUND" 2>/dev/null

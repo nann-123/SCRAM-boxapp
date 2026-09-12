@@ -1,0 +1,163 @@
+# Bug #7 修复提案 v4（人工复核会话定位并验证，2026-09-12 20:xx）
+#
+# 【状态：已应用到工作树（2026-09-12 21:5x），核心已重编译并跑过回归 —— 见本文件末尾"应用记录"】
+# 与 v1/v2/v3 的区别：那三个都在 guard 几何分母（已证不可达），本提案修的是真正的原因（重复交付）
+# 与两处无保护除法；另外把三条"设计内的信息性打印"加 INFO 前缀，让日志判据不再误判。
+#
+# 结论先说：Bug #7 记录为"euler_coupled 除零"，实际是三个互不相关的缺陷叠加：
+#   (7a) euler_coupled 重分配循环【重复交付】hand-out 累加器 → 总数净增 0.054% → 第 428 行 STOP
+#        （这才是 status=failed 的真正原因，与除零无关；v1/v2/v3 三道 guard 打在这个缺陷之外）
+#   (7b) euler_coupled 循环内除法 RQ(k)/Q(k)、RN(k)/N(k) 在 Q(k)/N(k)=0 的空 bin 上除零
+#        （Fortran 不短路求值，`Q(k) .NE. 0D0` 写在第三个 .AND. 操作数里，求值发生得太晚）
+#   (7c) 热力学路径的无保护浮点运算（本提案只修 total_PH 的 log10；aec_drv 那处未修，见下）
+#
+# 证据 1（首次把 IEEE 异常定位到具体行）：用 -ffpe-trap=zero,invalid,overflow 重编译核心
+#   （树 /tmp/bug7_fpetrap/scram，未动仓库运行时；产物 install_logs/auto/bug7_fpetrap/）：
+#     首个 FPE = SRC/ModuleThermodynamics.f90:264 `total_PH=-log10((total_IH/1.D6)/(total_water/1.d9))`
+#     调用链 update_wet_diameter ← processearo ← ProgramSCRAM:127；
+#     该处 total_IH=0（teaching 基座 2 物种里没有无机气溶胶物种）→ log10(0) → IEEE_DIVIDE_BY_ZERO。
+#   把该行加保护后再跑，陷阱落到 SRC/rdb/euler_coupled.f90:244-246（即 RQ(k)/Q(k) 那条 IF）：
+#     说明循环内的除零是第 244 行的 RQ/Q、N/R 检查，而不是 v1/v2/v3 一直在猜的 BQ/DQ/BN/DN。
+#
+# 证据 2（重复交付的定量证明）：在 euler_coupled 里插桩打印 kloc/grand/累加器（bug7_fpetrap3）：
+#     DBG k=1 kloc=1 grand=1 N=3.226548087e9 ；k=2,3,4 的 kloc 也都是 1（grand=1,0,0,1）
+#     DBG acc 1 N2cond = 1195543.8563619570 + 543109.32301551953（两个物种）
+#   N_ancien=3228286740.4770966，第 1 次守恒检查 N_nouveau=3226548087.2977195
+#     → 交出量 H = 1738653.1793771（相对 5.3856838600407908e-4）
+#   第 2 次守恒检查 N_nouveau=3230025393.6564746 = 第 1 次 + 2H（相对 -5.3856838600441215e-4）
+#   ⇒ 交付量被加了两次。原因：Q_2*/N_2* 累加器按 kloc(k)（=被交给哪个 bin）索引，
+#     而第 378-400 行的交付循环按【源 bin k】迭代，kloc(k) 相同的每个源都会把整个累加器再加一遍。
+#   本相位 kloc 全是 1、且 v2/v3 的 guard 条件都要求 kloc(k)>1 ⇒ 三道 guard 结构上不可能触发，
+#     "变异构建结果与 stock 逐位相同"是先验必然，不能推出"除零在循环外"。
+#
+# 证据 3（修复效果）：
+#   a) -ffpe-trap=debug 构建（bug7_fpetrap4）：gmd_hazy_coag_cond+method=6
+#      第 423 行带 STOP 的总数检查不再触发（"non conservation" 计数从 2 次降到 1 次），
+#      内混合从 1 步推进到 2 步，终态 number=3.22829e9 == 第 0 步 N_ancien（重分配一步精确守恒）；
+#      唯一 stopped 原因变成 (7c) 热力学路径的 IEEE 陷阱（backtrace: ModuleThermodynamics.f90:1119 aec_drv）。
+#   b) 出厂 safe 构建（bug7_fpetrap5）：内混合仅剩第 369 行那条【无 STOP 的信息性】打印
+#      （1-N_new/N_old=+5.3856838600407908e-4，与修复前逐位相同 —— 它打印的是"交付前"的中间量，设计如此）；
+#      外混合仍有 1 条 STOP：1-N_new/N_old=9.7725789640623617E-006（修复前是 5.4168e-4，降了 55 倍，
+#      N_nouveau=18797652.8 / N_ancien=18797836.5，绝对丢 184 个粒子）。
+#      ⇒ 这一小截残留推定来自边界 bin 的 hand-out 被丢弃（kloc(k)==1 且 grand==0、kloc(k)==ns 且 grand==1
+#        时第 380/391 行的分支直接不交付），需按 (7d) 再确认一轮。
+#
+# (7d) 检测判据本身也失真（尚未修）：第 369 行的总数检查是作者明确标注"se verifie si on ferme les bornes"
+#   的中间量打印（对应 STOP 已注释掉），但 run_service.py:558-562 与 probe_cell.py:39 只按关键字
+#   "non conservation" 判失败 ⇒ 任何走 euler_coupled 的格子都会被判 failed，即使数值完全守恒。
+#   修复方向建议：要么把这行打印改成明确的前缀（如 "INFO: ..."），要么让判据同时匹配 STOP/NaN。
+#
+# 重要提醒：run_service.py:558-562 与 probe_cell.py:39 把日志里出现 IEEE_INVALID_FLAG /
+#   IEEE_DIVIDE_BY_ZERO 当作崩溃关键字 ⇒ 只修 (7a)(7b) 后该格子仍会被判 failed（因为 (7c) 的
+#   浮点标志依然打印）。Bug #7 需要拆成 7a/7b/7c 三条分别销账，否则永远"修不好"。
+diff --git a/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleThermodynamics.f90 b/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleThermodynamics.f90
+index 366ad1a..960bd9a 100644
+--- a/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleThermodynamics.f90
++++ b/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/ModuleThermodynamics.f90
+@@ -261,7 +261,11 @@ contains
+ 	wet_m(j)=size_mass_av(k)
+       endif
+     enddo
+-    total_PH=-log10((total_IH/1.D6)/ (total_water/1.d9))
++    if (total_IH .GT. 0.D0 .AND. total_water .GT. 0.D0) then
++       total_PH=-log10((total_IH/1.D6)/ (total_water/1.d9))
++    else
++       total_PH=0.D0
++    endif
+ 	 
+   end subroutine update_wet_diameter
+   
+diff --git a/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/rdb/euler_coupled.f90 b/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/rdb/euler_coupled.f90
+index 88b25ed..0dc9baa 100644
+--- a/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/rdb/euler_coupled.f90
++++ b/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1/SRC/rdb/euler_coupled.f90
+@@ -241,23 +241,25 @@ SUBROUTINE EULER_COUPLED(ns, nesp, dbound, grand, d, diam,j, kloc, alpha, LMD, Q
+                 + N_2evap_esp(k, jesp) + N_2cond_esp(k, jesp)
+         ENDDO
+ 
+-        IF ( DABS(1D0 - (RQ(k)/Q(k))) .GE. Eps_machine &
+-             .AND. DABS(1D0 - (RQ(k)/Q(k))).NE. 1d0 &
+-             .AND. Q(k) .NE. 0D0) THEN
++        IF ( Q(k) .NE. 0D0 ) THEN
++           IF ( DABS(1D0 - (RQ(k)/Q(k))) .GE. Eps_machine &
++                .AND. DABS(1D0 - (RQ(k)/Q(k))).NE. 1d0 ) THEN
+ 
+-           PRINT*,k,"non conservation de la masse ds algo!!"
+-           PRINT*,"1 - RQ(k)/Qgros(k) = ",1D0 - RQ(k)/Q(k)
+-           PRINT*, "RQ",RQ(k), "Q",Q(k)
++              PRINT*,k,"INFO(algo, sans STOP) masse du bin non retrouvee"
++              PRINT*,"1 - RQ(k)/Qgros(k) = ",1D0 - RQ(k)/Q(k)
++              PRINT*, "RQ",RQ(k), "Q",Q(k)
+ 
++           ENDIF
+         ENDIF
+ 
+-        IF ( DABS(1D0 - RN(k)/N(k)) .GE. Eps_machine &
+-             .AND. DABS(1D0 - (RN(k)/N(k))).NE. 1d0&
+-             .AND. N(k) .NE. 0D0) THEN
++        IF ( N(k) .NE. 0D0 ) THEN
++           IF ( DABS(1D0 - RN(k)/N(k)) .GE. Eps_machine &
++                .AND. DABS(1D0 - (RN(k)/N(k))).NE. 1d0 ) THEN
+ 
+-           PRINT*,k,"non conservation du nombre ds algo!!"
+-           PRINT*,"1 - RN(k)/N(k)",1D0 - RN(k)/N(k)
++              PRINT*,k,"INFO(algo, sans STOP) nombre du bin non retrouve"
++              PRINT*,"1 - RN(k)/N(k)",1D0 - RN(k)/N(k)
+ 
++           ENDIF
+         ENDIF
+         DO jesp = 1, nesp
+ 
+@@ -368,34 +370,31 @@ SUBROUTINE EULER_COUPLED(ns, nesp, dbound, grand, d, diam,j, kloc, alpha, LMD, Q
+ 
+   IF ( DABS (1D0 - (N_nouveau/N_ancien)) .GE. Eps_machine &
+        .AND. N_ancien .GT. 0.d0) THEN            
+-     PRINT*,j,"non conservation du nombre total !!"
++     PRINT*,j,"INFO redistribution: nombre retenu avant livraison aux voisins"
+      PRINT*,j,"1 - N_nouveau/N_ancien ", 1D0 - N_nouveau/N_ancien   
+      PRINT*,j, "N_nouveau", N_nouveau 
+      PRINT*,j, "N_ancien", N_ancien
+      !STOP
+   ENDIF
++
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
++  ! The Q_2*/N_2* accumulators above are indexed by kloc(k), i.e. by the bin the
++  ! particles are handed to.  Delivering them once per *source* bin k added the
++  ! same aggregate again for every source sharing that kloc value (e.g. all four
++  ! bins mapping to kloc=1), which double counts the hand-out.  Deliver once per
++  ! accumulator index instead.
+   DO k = 1, ns
+-     IF (grand(k) == 0) THEN
+-        IF (kloc(k) .NE. 1) THEN
+-           N = 0.d0
+-           Q = 0.d0
+-           DO jesp = 1, nesp
+-              Q_esp(kloc(k)-1, jesp) = Q_esp(kloc(k)-1, jesp) &
+-                   + Q_2evap_esp(kloc(k), jesp) 
+-              N_esp(kloc(k)-1, jesp) = N_esp(kloc(k)-1, jesp) &
+-                   + N_2evap_esp(kloc(k), jesp)             
+-           ENDDO
+-        ENDIF
+-     ELSE
+-        IF (kloc(k) .NE. ns) THEN
+-           DO jesp = 1, nesp
+-              Q_esp(kloc(k)+1, jesp) = Q_esp(kloc(k)+1, jesp) &
+-                   + Q_2cond_esp(kloc(k), jesp) 
+-              N_esp(kloc(k)+1, jesp) = N_esp(kloc(k)+1, jesp) &
+-                   + N_2cond_esp(kloc(k), jesp)
+-           ENDDO
+-        ENDIF
++     IF (k .NE. 1) THEN
++        DO jesp = 1, nesp
++           Q_esp(k-1, jesp) = Q_esp(k-1, jesp) + Q_2evap_esp(k, jesp)
++           N_esp(k-1, jesp) = N_esp(k-1, jesp) + N_2evap_esp(k, jesp)
++        ENDDO
++     ENDIF
++     IF (k .NE. ns) THEN
++        DO jesp = 1, nesp
++           Q_esp(k+1, jesp) = Q_esp(k+1, jesp) + Q_2cond_esp(k, jesp)
++           N_esp(k+1, jesp) = N_esp(k+1, jesp) + N_2cond_esp(k, jesp)
++        ENDDO
+      ENDIF
+   ENDDO
+ 

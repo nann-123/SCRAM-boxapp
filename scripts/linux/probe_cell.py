@@ -36,7 +36,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 SCHEME_DIR = {"INTERNAL_MIXING": "internal_mixing", "EXTERNAL_MIXING": "external_mixing"}
-LOG_CRASH_PATTERNS = ["non conservation", "STOP", "NaN", "IEEE_INVALID", "IEEE_DIVIDE_BY_ZERO"]
+# 致命关键字：程序真的 STOMP/中止（这些才让格子判 failed）
+LOG_FATAL_PATTERNS = ["non conservation", "STOP", "NaN", "Program received signal", "segmentation"]
+# 浮点标志：只说明某处发生过除零/无效运算，程序通常继续（见 2026-09-12 复核 §二 7c）。
+# 过去把它并进判据，导致任何走 euler_coupled 的格子永远 failed、真问题被淹没，故单列。
+LOG_FP_FLAG_PATTERNS = ["IEEE_INVALID", "IEEE_DIVIDE_BY_ZERO", "IEEE_OVERFLOW", "IEEE_UNDERFLOW"]
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -169,12 +173,17 @@ def main() -> int:
                 continue
             if not tokens:
                 continue
-            try:
-                landed = abs(float(tokens[0]) - float(ovalue)) < 1e-12
-            except (TypeError, ValueError):
-                landed = str(tokens[0]) == str(ovalue)
-            if not landed:
-                dropped.append(f"{okey}={ovalue} 未落地（{cfg_file.name} 实际为 {tokens[0]}）")
+            # 一行可能承载多个字段（例："with_nucl nucl_model"），只比 tokens[0] 会误报
+            # （2026-09-12 实测：--set nucl_model=5 被报"未落地"，实际写进了第二个 token）。
+            # 故：只要该行的任一 token 等于请求值就算落地。
+            def _eq(token: str) -> bool:
+                try:
+                    return abs(float(token) - float(ovalue)) < 1e-12
+                except (TypeError, ValueError):
+                    return str(token) == str(ovalue)
+
+            if not any(_eq(t) for t in tokens):
+                dropped.append(f"{okey}={ovalue} 未落地（{cfg_file.name} 该行为 {' '.join(tokens)}）")
     if dropped:
         print("  !! 覆写未生效：请求的参数没有写进生成的 cfg（可能被 case preset 覆盖，见 Bug #11）")
         for item in dict.fromkeys(dropped):
@@ -235,14 +244,19 @@ def main() -> int:
             hard_failure = True
 
         log_path = run_dir / "logs" / "run.log"
-        hits = []
+        fatal, flags = [], []
         if log_path.exists():
             text = log_path.read_text(errors="replace")
-            hits = [p for p in LOG_CRASH_PATTERNS if re.search(re.escape(p), text, re.IGNORECASE)]
-        report["log_keywords"][scheme] = hits
-        if hits:
-            findings.append(f"{scheme} 日志含崩溃/异常关键字：{', '.join(hits)}")
+            fatal = [p for p in LOG_FATAL_PATTERNS if re.search(re.escape(p), text, re.IGNORECASE)]
+            flags = [p for p in LOG_FP_FLAG_PATTERNS if re.search(re.escape(p), text, re.IGNORECASE)]
+        report["log_keywords"][scheme] = fatal + flags
+        report.setdefault("log_fp_flags", {})[scheme] = flags
+        if fatal:
+            findings.append(f"{scheme} 日志含致命关键字：{', '.join(fatal)}")
             hard_failure = True
+        elif flags:
+            # 只报信号、不判失败：浮点标志本身不代表数值错了
+            findings.append(f"{scheme} 浮点标志（非崩溃，程序继续）：{', '.join(flags)}")
 
     (out / "probe.json").write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
 

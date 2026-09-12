@@ -30,7 +30,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "name_zh": "GMD hazy 冷凝验证",
         "description_en": "Reference-style validation case from Zhu et al. (2015): hazy 12 h condensation at 298 K and 1 atm.",
         "description_zh": "对应 Zhu et al. (2015) 第 3 节的 hazy 12 小时冷凝验证场景，298 K、1 atm。",
-        "base": "teaching",
+        "base": "baseline",
         "updates": {
             "case_preset": "gmd_hazy_condensation",
             "mixing_assumption": "EXTERNAL_MIXING",
@@ -39,13 +39,18 @@ TEMPLATES: list[dict[str, Any]] = [
                 "with_coag": 0,
                 "with_cond": 1,
                 "with_nucl": 0,
+                # 2026-09-12 人工复核（按论文补恒定硫酸盐气相源）：本体把论文 hazy 验证案例的
+                # "恒定硫酸盐源 2.29e-4 µg/m³/s（= 5.5 µm³/cm³/12h @ ρ=1.77）"硬编码在
+                # `nucl_model=5` 分支里（ModuleDiscretization.f90:713-714，注释 "specified for the
+                # validation test"），且只挂在 ESO4（=30 物种布局里的索引 4）上。
+                # 因此教学基座（2 物种）接不到该源 → 冷凝空转（Q-18）；改用 baseline 布局 + nucl_model=5，
+                # 实测源值 2.29e-4 生效、Mass Cond 非零。
+                "nucl_model": 5,
                 "temperature": 298.0,
                 "pressure": 101325.0,
                 "humidity": 0.7,
                 "final_time_hours": 12.0,
                 "dtmin_seconds": 1.0,
-                "n_sizebin": 4,
-                "n_frac": 2,
                 "tag_external": 0,
             },
         },
@@ -57,7 +62,7 @@ TEMPLATES: list[dict[str, Any]] = [
         "name_zh": "GMD hazy 凝并+冷凝验证",
         "description_en": "Reference-style validation case from Zhu et al. (2015): hazy 12 h condensation with coagulation.",
         "description_zh": "对应 Zhu et al. (2015) 第 3 节的 hazy 12 小时凝并+冷凝联合验证场景。",
-        "base": "teaching",
+        "base": "baseline",
         "updates": {
             "case_preset": "gmd_hazy_coag_cond",
             "mixing_assumption": "EXTERNAL_MIXING",
@@ -71,9 +76,13 @@ TEMPLATES: list[dict[str, Any]] = [
                 "humidity": 0.7,
                 "final_time_hours": 12.0,
                 "dtmin_seconds": 1.0,
-                "redistribution_method": 6,
-                "n_sizebin": 4,
-                "n_frac": 2,
+                # 2026-09-12 人工复核：原为 6（euler_coupled）。该方案在本体里是最脆弱的一支
+                # （重复交付 hand-out → 数量不守恒 → STOP，见 BUG_TRACKING #7），
+                # 而本体/论文口径用的都是 2（Moving Diameter，baseline12h.cfg 第 7 行）。
+                # 教学模板不应默认踩在本体的已知缺陷上，故改回 2；要用 6 请显式选择。
+                "redistribution_method": 2,
+                # 同 gmd_hazy_condensation：用 baseline 布局 + nucl_model=5 才能拿到论文的恒定硫酸盐源
+                "nucl_model": 5,
                 "tag_external": 0,
             },
         },

@@ -152,8 +152,68 @@
     },
     "gmd_hazy_coag_cond|method2": {
       "status": "clean",
-      "note": "L2变体: redistribution_method=2(Moving Diameter)+with_cond=1 双侧ok, mass=0.000173701, anomaly=8, 残差~0, 无NaN/Inf; 验证Bug#7临时规避(6→2)有效, 与method6崩溃对照成立",
-      "date": "2026-09-11"
+      "note": "Q-04: redistribution_method=2 下 gmd_hazy_coag_cond 双侧 status=ok, mass=0.000173701, residual=2.8e-22/0.0, has_nan=0 has_inf=0, anomaly=8/8; 反证判据未推翻, method=2 规避了 Bug #7 (默认 method=6 euler_coupled 非守恒+IEEE_DIVIDE_BY_ZERO), 无新 Bug",
+      "date": "2026-09-12"
+    },
+    "gmd_paris_condensation|humidity0.99": {
+      "status": "clean",
+      "note": "RH=0.99 EXT mass=35.1571 num=3.44653e10 anomaly=154 residual=0 has_nan=0 has_inf=0 steps=42",
+      "date": "2026-09-12"
+    },
+    "gmd_paris_condensation|humidity0.995": {
+      "status": "clean",
+      "note": "RH=0.995 EXT mass=36.0418 num=3.44653e10 anomaly=159 residual=0 has_nan=0 has_inf=0 steps=42; 与0.994999(mass=35.1567)相比RH=0.995处出现~2.5%质量跳变，定位到isorropia regime切换(isofwd.f DRNH42S4/DRLC阈值)，属物理行为非Bug",
+      "date": "2026-09-12"
+    },
+    "gmd_paris_condensation|humidity0.999": {
+      "status": "clean",
+      "note": "RH=0.999 EXT mass=36.0417 num=3.44653e10 anomaly=159 residual=0 has_nan=0 has_inf=0 steps=42; 与0.995同高支，确认跳变在0.995处",
+      "date": "2026-09-12"
+    },
+    "gmd_paris_full|rdb_option_4way": {
+      "status": "bug",
+      "note": "Q-03 重探(Bug#11修复后): legacy/core_conserv/core_nogrow/core_smallgrow 四值终态逐位相同(EXT mass=33.751055266282556/INT mass=32.73376655624839, 540/88步) → redistribution_option 是死控件, 新 Bug #12; 根因 app 经 env SCRAM_RDB_CORE_CONSERV 传递但 Fortran 不读",
+      "date": "2026-09-12"
+    },
+    "gmd_paris_full|q10_m3_legacy_vs_core_conserv": {
+      "status": "clean",
+      "note": "Q-10: M3双轨逐时步(2026-09-12 14:16轮)。gmd_paris_full下legacy vs core_conserv逐时步差分7类CSV: size_distribution_mass/number(3780行)、mapping_events、coag_delta_mass/number、composition_diversity全部逐位相同; conservation_audit仅计时列mapping_build_time不同(EXT 539/540、INT 68/88行, 其余字段全同)。反证判据(找到首个分歧步+被改字段)未满足→假设被推翻: 两模式无物理分歧步, 与Q-03一致(redistribution_option死控件, Bug #12)。非新Bug, Q-10关闭。",
+      "date": "2026-09-12"
+    },
+    "Q-14|teaching_base_gmd_validation": {
+      "status": "done",
+      "note": "Q-14证据(2026-09-12 15:19轮, 只列证据, 物理判断待人工): teaching基座(examples/configs/default_config.cfg, gmd_hazy_condensation/gmd_hazy_coag_cond经base=teaching继承)仅2物种: Sulfate(init_gas=0.0005, emission=0)+BlackCarbon(init_gas=0, emission=0, 完全惰性), 无持续冷凝源; 论文Zhu et al.2015 §3要求恒定硫酸盐气相源5.5µm³/cm³/12h(持续冷凝源); baseline(Greater Paris参考, 30物种)有真实冷凝气相SO4(init_gas=0.000795/emission=1.72e-05)/NH4(init_gas=1.139)/NO3(init_gas=5.167)。实测(BUG_TRACKING实测表): gmd_hazy_condensation final mass=0.000174, number=3.42B不变→冷凝空转。反证判据「与手册/论文物种物性对不上⇒基座选择有误」被推翻(命中): teaching基座缺持续冷凝源, 基座选择有误, 需换回baseline或补物种。agent只列证据, 物理判断(是否换基座/补物种/接受现状)待人工。",
+      "date": "2026-09-12"
+    },
+    "gmd_hazy_coag_cond|method6|fixed_core": {
+      "status": "clean",
+      "note": "打上 proposals/bug7_double_add_v4.patch 后重编译：status=ok、2 步、non conservation 0 次、无 IEEE 关键字、number=3.22829e9（=第 0 步 N_ancien，精确守恒）",
+      "date": "2026-09-12"
+    },
+    "gmd_hazy_coag_cond|method3|number_growth": {
+      "status": "bug",
+      "note": "方法 3 下粒子数 ×153（5.28349e12 vs 3.44565e10），质量不变；性质待判（Q-19）",
+      "date": "2026-09-12"
+    },
+    "gmd_hazy_condensation|teaching_base|cond_noop": {
+      "status": "bug",
+      "note": "with_cond=1、12h 跑满质量/数量/气相逐位不变，Mass Cond=0.000000（Q-18）",
+      "date": "2026-09-12"
+    },
+    "fuzz_q11b|m4|n20|seed20260913": {
+      "status": "todo",
+      "note": "改进后模糊测试重跑（旧 fuzz_q11 结果因覆写被吞而无效）",
+      "date": "2026-09-12"
+    },
+    "mapping_scheme|legacy_vs_default|megapole12h": {
+      "status": "bug",
+      "note": "env 设为 LEGACY 与 COAG_TARGET_NEAREST 终态完全相同（总质量 36.489297208418 两侧一致），映射开关观察不到影响",
+      "date": "2026-09-12"
+    },
+    "fidelity|upstream_vs_devkit|megapole12h": {
+      "status": "clean",
+      "note": "同一 cfg：本体 exe 与仓库核心 exe 总质量逐位一致 36.489297208418；aero 24.228342563001 vs 24.228675157856（相对 1.4e-5）、total_water 1e-5 级差异，与编译器标志(-g vs -O2 -ffp-contract=off)一致，非代码改动",
+      "date": "2026-09-12"
     }
   },
   "hypotheses": {
@@ -271,7 +331,92 @@
       "status": "clean",
       "note": "20260911-193936 L3变体: gmd_paris_full P=50kPa T=273K, EXT/INT均ok, mass=36.6479/34.4341, anomaly=1092/564, residual=4.5e-16/1.2e-16, has_nan=0 has_inf=0, 低压未触发除零",
       "date": "2026-09-11"
+    },
+    "noop|gmd_paris_full|with_coag,with_cond,with_nucl": {
+      "status": "clean",
+      "note": "Q-12: Bug#11修复(7cc59c7)后空转检测，三开关关掉后终态均改变(Δmass 2.7e-2/2.7e-1/2.7e-2, Δnumber 1.0/0.19/0.16)且步数变化→开关真实生效，反证判据未推翻，无新Bug",
+      "date": "2026-09-11"
+    },
+    "cfg|zero_initial_mass_test+fixed": {
+      "status": "clean",
+      "note": "Q-13: Bug#1夹具复核。test(零质量骨架)EXT mass=0/INT mass=0复现症状; fixed(非零初值)EXT mass=0.0005/INT mass=0.0005正常。应用内模板自c9b6310起基座=teaching非零, 零质量路径不可达, 反证判据未推翻(应用内无mass=0), 夹具对保留作回归资产, 无新Bug",
+      "date": "2026-09-11"
+    },
+    "cfg|nucl_model5_test": {
+      "status": "done",
+      "note": "Q-08: Bug #9 修复后复核。56 行标准格式 cfg 现可正常解析并运行（修复前崩溃 Bad real number in item 8）：EXT mass=238.853 number=1.42731e10 / INT mass=50.3858 number=4.90948e9，status=ok，max_rel_residual=9.829e-20，has_nan=0 has_inf=0。#9 修复验证通过。",
+      "date": "2026-09-11"
+    },
+    "Q-11|m4_fuzz|gmd_paris_condensation|n20|seed20260912": {
+      "status": "clean",
+      "note": "M4 不变量模糊测试 20 组随机合法配置（seed=20260912，基座 gmd_paris_condensation，随机化 with_coag/cond/nucl、nucl_model 1-4、redistribution_method 1-5、redistribution_option 4 值、T/P/RH/dt/时长）：全部 status=ok，worst_rel_residual=0.0<=1e-6，has_nan=0，has_inf=0，final_mass/number 均有限且非负，steps 6-203。反证判据「任一组失败⇒命中」未推翻 → 无新 Bug。报告 install_logs/auto/fuzz_q11/fuzz_report.json",
+      "date": "2026-09-12"
+    },
+    "Q-07|zero_mass_silent_skip|zero_initial_mass_test": {
+      "status": "done",
+      "note": "Q-07: 零质量骨架(凝并/冷凝/成核全开) mass=0 守恒(residual=0)但过程计数全0: INT active_bins=0/coag_event_rate_sum=0/mapping_calls_step=0, EXT 同且 final_number 0.0 而 INT 保留初值 4.12452e9(不对称,待人工确认); 属 Bug#1 已知零质量路径(应用内不可达), 非新Bug",
+      "date": "2026-09-12"
+    },
+    "gmd_hazy_coag_cond|method6_m3_step0": {
+      "status": "done",
+      "note": "Q-05 M3差分定位(2026-09-12): method=6(euler_coupled)首个非守恒步=第0步(首步), 仅总粒子数N非守恒(1-N_new/N_old≈±5.4e-4), 伴随IEEE_DIVIDE_BY_ZERO(external另IEEE_INVALID_FLAG); 根因=SRC/rdb/euler_coupled.f90 对diam(k)/d(kloc(k))无保护除法, bin直径为0时除零→Inf/NaN→N_1_esp负值→STOP; 已出patch proposals/bug7_euler_coupled_divzero.patch(git apply --check通过, 未编译验证); 属已知Bug#7定位, 非新Bug",
+      "date": "2026-09-12"
+    },
+    "cfg|default_config_skeleton": {
+      "status": "done",
+      "note": "Q-09: base=default 骨架(core/defaults/default_config.cfg, 与 zero_initial_mass_test.cfg 逐字节相同) 实测 EXT mass=0/num=0, INT mass=0/num=4.12452e9, status=ok residual=0 无NaN/Inf。反证判据(mass≠0⇒推翻)未推翻: 该路径确实 mass=0。可达性: 模板系统不可达(7 模板均 base=teaching/baseline), 但 GUI 手动 Load Config(main_window.py:994-995, 对话框根=core/)可达 → 零质量路径经手动加载可达, 非新 Bug(=已知 Bug#1/Q-07 零质量路径), collect_metrics 判据已覆盖",
+      "date": "2026-09-12"
+    },
+    "Q-15|bug7_patch_verify|gmd_hazy_coag_cond|method6|mutant": {
+      "status": "bug",
+      "note": "变异构建验证：bug7_euler_coupled_divzero.patch 无效。变异exe sha256=038d81c9(≠stock f03b90aa)，euler_coupled.f90已重编译，run.log确认调用变异exe；仍status=failed、step0 IEEE_DIVIDE_BY_ZERO+non conservation、1-N_new/N_old=5.4167e-4(与stock逐位相同)。根因细化：guard只查diam(k)/d(kloc(k))，除零实际来自DQ=1-(d(kloc(k))/d(kloc(k)-1))^3的d(kloc(k)-1)=0(下边界bin直径0，未被guard覆盖)。patch需重做(检查d(kloc(k)-1)或kloc(k)==1分支dbound(1))，物理判断待人工",
+      "date": "2026-09-12"
+    },
+    "Q-16|bug7_patch_v2_verify|gmd_hazy_coag_cond|method6|mutant": {
+      "status": "bug",
+      "note": "v2 patch(bug7_euler_coupled_divzero_v2.patch, guard增d(kloc(k)-1)/d(kloc(k)+1))变异构建验证无效。变异exe sha256=63e4cc5b(≠stock f03b90aa, ≠v1 038d81c9), euler_coupled.f90已重编译; 跑gmd_hazy_coag_cond+method=6仍status=failed、IEEE_DIVIDE_BY_ZERO、1-N_nouveau/N_ancien=5.4167525032922104E-004(与stock逐位相同)→v2 guard未CYCLE任何bin。结论:除零不在DO k=1,ns循环内(原始直径均>0)。",
+      "date": "2026-09-12"
+    },
+    "Q-16|bug7_patch_v3_verify|gmd_hazy_coag_cond|method6|mutant": {
+      "status": "bug",
+      "note": "v3 patch(bug7_euler_coupled_divzero_v3.patch, v2基础+退化bin guard d(kloc(k))==d(kloc(k)±1))变异构建验证无效。变异exe sha256=1e29e83d(≠stock f03b90aa), euler_coupled.f90已重编译; 跑gmd_hazy_coag_cond+method=6仍status=failed、IEEE_DIVIDE_BY_ZERO、1-N_nouveau/N_ancien=5.4167525032922104E-004(与stock逐位相同)→退化bin guard也未CYCLE任何bin。关键结论:v1/v2/v3覆盖DO k=1,ns循环全部原始直径与退化bin均无效,除零源在循环外(redist_euler.f90调用前d_before/d_after或isorropia/condensation路径),Q-05/Q-15根因归属需修正,真实源待定位(新队列项Q-16)。method=2临时规避仍有效。",
+      "date": "2026-09-12"
+    },
+    "Q-16|bug7_real_source|gmd_hazy_coag_cond|method6|fpetrap": {
+      "status": "done",
+      "note": "人工复核（2026-09-12 21:xx）用 -ffpe-trap=zero,invalid,overflow 重编译定位：首个浮点异常 ModuleThermodynamics.f90:264（log10(0)，teaching 基座 total_IH=0）；加保护后落在 euler_coupled.f90:244（RQ(k)/Q(k)，空 bin，Q(k)!=0 写在第三个 .AND. 上不短路）。并纠正 Q-05/Q-15 框架：让格子 failed 的是 euler_coupled.f90:378-400 的【重复交付】（累加器按 kloc(k) 索引、交付循环按源 bin 迭代；本相位 kloc≡1 ⇒ 交出量 H 被加回两次，净增相对 5.3856838600407908e-4）。v1/v2/v3 guard 在本相位恒假（要求 kloc(k)>1），逐位相同是必然。证据 install_logs/auto/bug7_fpetrap{,2,3,4,5}/；修后 hazy method=6 格子 status=failed→ok、non conservation 归零、粒子数精确守恒（install_logs/auto/bug7_verify_fixed/）",
+      "date": "2026-09-12"
+    },
+    "Q-17|bug7_residual_boundary|gmd_hazy_coag_cond|method6|fixed": {
+      "status": "todo",
+      "note": "修后外混合残留 1-N_new/N_old=9.77e-6（修前 5.4168e-4），推定边界 bin hand-out 被丢弃（euler_coupled.f90:380/391），待插桩计数确认",
+      "date": "2026-09-12"
+    },
+    "Q-18|condensation_noop|gmd_hazy_condensation|teaching_base": {
+      "status": "todo",
+      "note": "teaching 基座下 with_cond=1、12h 跑满后质量/数量/气相逐位不变、Mass Cond=0.000000（连初始 5e-4 气相都不凝）；待与 gmd_paris_condensation 对照定位抑制字段",
+      "date": "2026-09-12"
+    },
+    "Q-19|method3_number_growth|gmd_paris_condensation|redist3": {
+      "status": "todo",
+      "note": "redistribution_method=3 → EXT 5.28349e12/INT 6.15417e12（method=2 为 3.44565e10，×153）；method=5 ×3；质量基本不变。fuzz_q11 报告里同现象（idx 9 ×383）被判 clean。待判设计使然 or 缺陷",
+      "date": "2026-09-12"
+    },
+    "Q-20|emission_bookkeeping|gmd_paris_condensation|all_off": {
+      "status": "todo",
+      "note": "过程全关时质量终态=初态+m_emis 逐位精确，数量终态比 初态+n_emis 少 ~1.2e-4（~2.5e6 粒子）；待判打印口径 or 发射积分缺陷",
+      "date": "2026-09-12"
+    },
+    "Q-11|m4_fuzz|gmd_paris_condensation|n20|seed20260913|fixed_tool": {
+      "status": "todo",
+      "note": "用修好的 fuzz_invariants.py（explicit_keys + 覆写落地校验 + 全关不变量 + 逐组证据）重跑 20 组；count 旧结果 fuzz_q11 因覆写被案例预设吞掉而无效（9 个 with_coag=1 配置终态数量与 with_coag=0 相同）",
+      "date": "2026-09-12"
+    },
+    "Q-21|mapping_scheme_env|app_to_core|contract": {
+      "status": "bug",
+      "note": "20260912-221542 轮夹具固化：probe_cell gmd_paris_condensation 默认 vs --set mapping_scheme=LEGACY 两臂终态逐位相同(EXT mass=33.0654/INT mass=32.6176/number=3.44653e10/steps=42/anomaly 124/213)，两臂 run.log mapping_mode 均=COAG_TARGET_NEAREST，生成 cfg 无 mapping 字段 ⇒ 反证判据(数值不变且 env 恒 COAG_TARGET_NEAREST)成立=死配置，确认 Bug #15",
+      "date": "2026-09-12"
     }
   },
-  "note": "台账路径自 2026-09-11 起统一为 docs/linux_debugging/probe_ledger.json；此前脚本误写 docs/probe_ledger.json，与 brief/runbook/probe_backlog 文档不一致（已合并）"
+  "note": "台账路径自 2026-09-11 起统一为 docs/linux_debugging/probe_ledger.json；此前脚本误写 docs/probe_ledger.json，与 brief/runbook/probe_backlog 文档不一致（已合并） | 2026-09-12 人工复核：Q-16 已答（重复交付为真因，除零另有其处）；新增 Q-17..Q-20；并修掉工具三处失真（auto_round 签名、probe_cell/run_service 判据分类、fuzz 覆写被预设吞掉）。"
 }

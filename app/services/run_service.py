@@ -554,12 +554,21 @@ class RunService:
             entries.append(existing)
         env["LD_LIBRARY_PATH"] = ":".join(entries)
 
+    # 致命：程序真的中止（Fortran STOP / 浮点陷阱中止 / 信号）
     _FATAL_LOG_PATTERNS: list[str] = [
         "non conservation",
         "negatif",
+        "STOP",
+        "Program received signal",
+        "segmentation fault",
+    ]
+    # 浮点标志：只表示发生过除零/无效运算，程序通常继续（复核 2026-09-12 §二 7c）。
+    # 过去并入判据 → 任何走 euler_coupled 的格子恒判 failed；现在单列，不再致命。
+    _FP_FLAG_PATTERNS: list[str] = [
         "IEEE_INVALID_FLAG",
         "IEEE_DIVIDE_BY_ZERO",
-        "STOP",
+        "IEEE_OVERFLOW",
+        "IEEE_UNDERFLOW",
     ]
 
     def _effective_returncode(self, raw_returncode: int, prepared: dict[str, Any]) -> int:
@@ -588,10 +597,14 @@ class RunService:
         run_root = Path(prepared["run_root"])
         csv_root = run_root / "csv"
         csv_root.mkdir(parents=True, exist_ok=True)
+        # 2026-09-12：logs/ 只在 prepare_run 里建过；重复使用同一输出目录（如模板体检重跑）时
+        # 可能不存在 → copy2 抛 FileNotFoundError，整轮判定被吞。这里补一次即可。
+        logs_root = run_root / "logs"
+        logs_root.mkdir(parents=True, exist_ok=True)
         result_dir = self.runtime_dir / "RESULT"
         report_path = result_dir / "report.txt"
         if report_path.exists():
-            shutil.copy2(report_path, run_root / "logs" / "report.txt")
+            shutil.copy2(report_path, logs_root / "report.txt")
         timestep_path = csv_root / "timestep_summary.csv"
         if timestep_path.exists():
             return
