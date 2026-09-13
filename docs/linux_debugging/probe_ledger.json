@@ -214,6 +214,11 @@
       "status": "clean",
       "note": "同一 cfg：本体 exe 与仓库核心 exe 总质量逐位一致 36.489297208418；aero 24.228342563001 vs 24.228675157856（相对 1.4e-5）、total_water 1e-5 级差异，与编译器标志(-g vs -O2 -ffp-contract=off)一致，非代码改动",
       "date": "2026-09-12"
+    },
+    "gmd_paris_full|init_scenario_1_2_3": {
+      "status": "bug",
+      "note": "init_scenario=1/2/3 在 gmd_paris_full（出厂 tag_init=1）下 t=0 质量 21.583170063260344、数量 1.4625e10 逐位相同 ⇒ 控件无效；nucl_model=5 时场景才生效（hazy 228.8/urban 537.4）",
+      "date": "2026-09-12"
     }
   },
   "hypotheses": {
@@ -388,34 +393,69 @@
       "date": "2026-09-12"
     },
     "Q-17|bug7_residual_boundary|gmd_hazy_coag_cond|method6|fixed": {
-      "status": "todo",
-      "note": "修后外混合残留 1-N_new/N_old=9.77e-6（修前 5.4168e-4），推定边界 bin hand-out 被丢弃（euler_coupled.f90:380/391），待插桩计数确认",
-      "date": "2026-09-12"
+      "status": "done",
+      "note": "2026-09-13 15:xx 轮插桩验证（v4 修复+Q17 边界丢弃计数器，变异 exe sha256 9b27cbcd≠stock f03b90aa）：gmd_hazy_coag_cond+method=6 跑满 512 步，Q17 边界丢弃计数器（N_2evap_esp(1,·)/N_2cond_esp(ns,·) 未交付部分）EXT/INT 全程=0.0（0 步非零）⇒ **反证判据「计数>0 且与残差量级吻合⇒边界丢弃」未满足，假设被推翻：边界 hand-out 丢弃不是残差源，另有残差源**。**2026-09-13 复核更正（原「修后仍有残差」表述作废）**：9.77e-6 / 2.9e-4 系**口径误读**——`1-N_new/N_old` 的打印点在上游 `euler_coupled.f90:371`，是**交付给邻居之前**的中间量（上游该处 :375 写的就是 `!STOP`，作者视为非致命、非零属常态）：`N_1` 与 `N_2` 按 `AN/BN+CN/DN≡1` 互补，交付前只累加 `N_1`，故该值恒等于本次调用的 hand-out 比例，不是守恒残差。真正的守恒判据是交付后的 :425/:429（活 STOP）与 :434/:438；v4 跑满 512 步该判据**全程未触发**（日志中 “non conservation du nombre total” 出现 0 次，stock 同 cfg 出现 8 次并 STOP）⇒ **v4 修复后数量守恒，不存在待解释的残差**。故 Q-17「边界 hand-out 丢弃不是残差源」成立，而“另有残差源”不成立（无需再找）。**补充溯源（2026-09-13 复核）**：Q-17 原记的 9.77e-6 与 5.4168e-4 同出 `install_logs/auto/bug7_fpetrap5`（mtime 09-12 21:19，其源码树 `/tmp/bug7_fpetrap/scram/SRC/rdb/euler_coupled.f90` 已含 v4 主体 ⇒ 是**修复后**构建），是该 run 第 47-52 行**同一判据点、两次不同子群体调用**的值（N_ancien 分别 3.21e9 / 1.88e7）⇒ 原记“修后 9.77e-6、修前 5.4168e-4、降 55 倍”不成立（同源同点，仅子群体不同）；该 run 打点后仍跑到 `Progress: 100%` 并写出终态表，反证这两处只能出自交付前那处 `!STOP`（致命点在 :424/:428，触发即中止）。全日志最大 |1-N_new/N_old|=0.877（step 0），非 0.67。证据 install_logs/auto/q17_boundary/（v4）与 q17_boundary_stock/（stock 对照）。",
+      "date": "2026-09-13"
     },
     "Q-18|condensation_noop|gmd_hazy_condensation|teaching_base": {
-      "status": "todo",
-      "note": "teaching 基座下 with_cond=1、12h 跑满后质量/数量/气相逐位不变、Mass Cond=0.000000（连初始 5e-4 气相都不凝）；待与 gmd_paris_condensation 对照定位抑制字段",
-      "date": "2026-09-12"
+      "status": "done",
+      "note": "2026-09-13 16:xx 轮清理陈旧todo：hunt_plan §5 已判已解决(2026-09-12 22:3x)——论文恒定硫酸盐源硬编码在nucl_model=5分支(ModuleDiscretization.f90:713-714),teaching基座接不到;两个hazy模板已改base=baseline+nucl_model=5,Mass Cond非0(gmd_hazy_condensation=2.919/gmd_hazy_coag_cond=1.388),模板体检7/7全绿。台账与hunt_plan状态对齐",
+      "date": "2026-09-13"
     },
     "Q-19|method3_number_growth|gmd_paris_condensation|redist3": {
-      "status": "todo",
-      "note": "redistribution_method=3 → EXT 5.28349e12/INT 6.15417e12（method=2 为 3.44565e10，×153）；method=5 ×3；质量基本不变。fuzz_q11 报告里同现象（idx 9 ×383）被判 clean。待判设计使然 or 缺陷",
-      "date": "2026-09-12"
+      "status": "done",
+      "note": "20260913-030x 分类完成(源码+数值): method=3(euler_mass)/5(hemen) 为质量守恒方案——redist_euler.f90 分派 3=EULER_MASS/4=EULER_NUMBER/5=HEMEN/6=EULER_COUPLED; euler_mass.f90:152 与 hemen.f90:357/371 在重分配后按 N(k)=6*Q/(PI*rho*d^3) 由质量重算数量, 且 1-Qnew/Qold 超 Eps_machine 即 STOP(质量守恒被强制); euler_number.f90:154 则守恒数量. 数值佐证(fuzz_q11): method=2 数量恒 3.4465e10(数量守恒), method=3 数量 x8.6~x383 而质量同量级, method=5 数量 x4.5~x8.4 质量同量级. 与 Zhu et al.2015 方案定义一致(质量守恒/数量随直径重算) => 设计使然, 上游固有, 非缺陷. 反证判据(数量变化有明确物理/算法解释⇒记 clean)满足. 产品侧默认 method=2 不受影响.",
+      "date": "2026-09-13"
     },
     "Q-20|emission_bookkeeping|gmd_paris_condensation|all_off": {
-      "status": "todo",
-      "note": "过程全关时质量终态=初态+m_emis 逐位精确，数量终态比 初态+n_emis 少 ~1.2e-4（~2.5e6 粒子）；待判打印口径 or 发射积分缺陷",
-      "date": "2026-09-12"
+      "status": "clean",
+      "note": "20260913-0221 复核: probe_cell gmd_paris_condensation 全关(with_coag/cond/nucl=0), 2步 status=ok 无NaN/Inf residual=0. row0 number=1.4625062455091686e10 + n_emis=1.9840194314005932e10 = row1=3.4465256769097618e10 逐位精确(diff=0.0); 质量同 row0 21.583170063260344 + m_emis 2.8988723471687750 = 24.482042410429120 逐位精确. 全关时除 emission 外无其它改 number 过程, number 必守恒. 原 ~1.2e-4 数量残差(~2.5e6 粒子)不复现, 最可能来自旧 fuzz 工具覆写吞没缺陷(2026-09-12 已修)或旧口径. 记 clean, Q-20 关闭.",
+      "date": "2026-09-13"
     },
     "Q-11|m4_fuzz|gmd_paris_condensation|n20|seed20260913|fixed_tool": {
-      "status": "todo",
-      "note": "用修好的 fuzz_invariants.py（explicit_keys + 覆写落地校验 + 全关不变量 + 逐组证据）重跑 20 组；count 旧结果 fuzz_q11 因覆写被案例预设吞掉而无效（9 个 with_coag=1 配置终态数量与 with_coag=0 相同）",
-      "date": "2026-09-12"
+      "status": "clean",
+      "note": "20260913-14:xx 轮用修好的 fuzz_invariants.py（explicit_keys+覆写落地校验+全关不变量+逐组证据）重跑 20 组 seed=20260913：20/20 ok，any_failure=False，worst_rel_residual=0.0≤1e-6，has_nan=0，has_inf=0，0 组 failures。覆写落地校验通过（group0 effective_switches with_coag=0/with_cond=0 真实生效，不再被 case preset 吞掉）。signals 均为数量变化（135.7%~13719%），属 Q-19 已判设计使然（euler_mass/hemen 质量守恒/数量随直径重算），非缺陷。反证判据「任一组失败⇒命中」未推翻→无新 Bug。报告 install_logs/auto/fuzz_q11_fixed/fuzz_report.json",
+      "date": "2026-09-13"
     },
     "Q-21|mapping_scheme_env|app_to_core|contract": {
       "status": "bug",
       "note": "20260912-221542 轮夹具固化：probe_cell gmd_paris_condensation 默认 vs --set mapping_scheme=LEGACY 两臂终态逐位相同(EXT mass=33.0654/INT mass=32.6176/number=3.44653e10/steps=42/anomaly 124/213)，两臂 run.log mapping_mode 均=COAG_TARGET_NEAREST，生成 cfg 无 mapping 字段 ⇒ 反证判据(数值不变且 env 恒 COAG_TARGET_NEAREST)成立=死配置，确认 Bug #15",
       "date": "2026-09-12"
+    },
+    "Q-22|nucl_model5_semantics|config_layer": {
+      "status": "done",
+      "note": "nucl_model=5 只覆盖 SO4/BC 两物种（每档取内置场景分布的一半），其余 28 物种保持配置初值（MD/NH4 实测不变，非零物种 29/30 两侧相同）；与 init_scenario 有关（hazy 228.8 / urban 537.4 µg/m³），与 tag_init 无关。'各一半'仅内混成立",
+      "date": "2026-09-12"
+    },
+    "Q-23|emission_window_44min|normal_mode": {
+      "status": "done",
+      "note": "20260913-05xx 轮确认(upstream): 普通模式(nucl_model≠5)排放窗口写死 time_emis=2.64376e3 s(ModuleDiscretization.f90:1194-1205), 超出即 emis_dt=0 停止排放。数值证据: gmd_paris_emission_only 全关过程, 12h(43200s)臂 mass_delta=2.898872347168776/number_delta=1.984019431400593e10; 0.5h(1800s)臂 mass_delta=1.973692855971720/number_delta=1.350816631056173e10; 两臂 delta 比值=0.6808484885=1800/2643.76 逐位精确 ⇒ 排放随窗口内时间线性, 窗口=2643.76s 确认。本体论文 cfg emission=0 不受影响; baseline 基座 SO4 emission=1.72e-5 受影响(12h 仅前 44 min 排放)。属上游固有, 非移植缺陷, 不计入 gate。证据 install_logs/auto/probes/q23_emis_window_{12h,05h,30min}/",
+      "date": "2026-09-13"
+    },
+    "Q-24|init_scenario_inert|gui_control": {
+      "status": "done",
+      "note": "2026-09-13 16:xx 轮清理陈旧todo：hunt_plan §5 已判已做(2026-09-13 01:xx,port标签)——出厂tag_init=1三场景逐位相同(死控件,已知);tag_init=0臂三场景对照证实init_scenario在tag_init=0时产生数值差异。根因已定位(tag_init门控),处置三选一(a场景与tag_init联动[推荐]/b暴露tag_init/c移除下拉)待人工。台账与hunt_plan状态对齐",
+      "date": "2026-09-13"
+    },
+    "Q-24|taginit0_scenario_3way|gmd_paris_full|contract": {
+      "status": "done",
+      "note": "Q-24/Bug#16: tag_init=0 三场景对照(gmd_paris_full,0.5h)。出厂tag_init=1三场景逐位相同(死控件,已知)。tag_init=0臂: 三场景status=ok无NaN/Inf,residual~1e-18,初值质量2.560/2.581/2.587e-11(即#16注的2.5e-11,是初值气溶胶质量,场景对数正态初值本应可忽略),终态质量EXT 11.1139/11.1076/11.1028(来自冷凝Mass Cond~11.09)三场景不同。结论: tag_init=0路径数值可用,三场景确实产生差异⇒控件非设计性死,仅被未暴露的tag_init门控; 处置a(场景与tag_init联动)可行, 非移除。属增删控件类, 待人工拍板。证据 install_logs/auto/probes/q24_taginit0_s{1,2,3}/",
+      "date": "2026-09-13"
+    },
+    "Q-25|coeff_lib_link|coag_target_nearest|contract": {
+      "status": "clean",
+      "note": "P3 系数库链路(最高优先未知)已答: COAG_TARGET_NEAREST 新路径是设计上运行期几何映射、不查系数库表。源码证据: ModuleCoeffRepartitionBoxmodel.f90 零个 nf90/netCDF 调用, 所有 open() 均 action=write(诊断 CSV 输出, 非读表); coeff_prepare_pair_mapping 非 LEGACY 分支从运行期 c_number/c_mass/mass_density_aer/cell_diam_av 计算目标态, coeff_find_nearest_cell(:1285) 在活 size_diam_av/discretization_composition 上打分, 不读任何系数文件。数值证据: coeftest 两组 COAG_TARGET_NEAREST 换库(s1_f1 vs s5_f3)日志 diff 仅 total run time 一行(4.907 vs 4.895), 全部数值行逐位相同; LEGACY 换库则跑挂(aero=0,exit=2, 因 LEGACY 才读表)。结论: 新路径不依赖系数库=设计使然, 非漏接, 属上游(upstream), 非移植缺陷, 不计入 gate。反证判据第二分支(代码证明不依赖库)命中。证据 install_logs/auto/coeftest/ + 源码行号。",
+      "date": "2026-09-13"
+    },
+    "Q-26|fidelity_gate|upstream_vs_repo|contract": {
+      "status": "bug",
+      "note": "P4 移植保真度脚本化+gate复核: 新建 scripts/linux/fidelity_check.py 并跑通。本体exe(sha256 71473328) vs 仓库exe(sha256 f03b90aa, stock) 同一本体规范cfg(~/SCRAM1.1/INIT/cfg_megapole_01072009.cfg, coef_s5_f3_b7.nc, 12h): 总质量逐位一致 36.48929720841787(bit-identical); 气溶胶质量 24.22834256300118 vs 24.22867515785633, 相对差 1.373e-05 > 1e-5 gate阈值 => gate_pass=False; 气相2.713e-05, Mass Cond 1.258e-04, total_water 4.320e-05。反证判据命中(gate未达标)。新发现: 手工轮把1.4e-5记为clean, 但按gate阈值(<=1e-5)实际未达标。差异源于 -g vs -O2 编译标志(非代码改动), 属阈值/口径问题而非移植缺陷, 不得自行放宽阈值, 需人工定夺(a 维持1e-5并统一编译标志 / b 调整阈值并记录依据 / c 总质量逐位一致为硬判据+气溶胶差为软信号)。port标签, 计入gate。证据 install_logs/auto/fidelity_check/20260913-082220/ + install_logs/auto/fidelity_q26/。",
+      "date": "2026-09-13"
+    },
+    "Q-27|bug7_v4_residual_discrepancy|gmd_hazy_coag_cond|method6|v4": {
+      "status": "clean",
+      "note": "**2026-09-13 复核：误报，前一轮「口径澄清」的结论「v4 未完整守恒数量」作废，人工复核请求撤销**。核实过程：① 这三处 `1-N_new/N_old`（9.77e-6 / 2.9e-4 / 0.67）都出自**交付前**判据（`euler_coupled.f90:373`，上游该处 :377 即 `!STOP`），非交付后的致命判据（:424/:428、:433/:437）；q17_boundary 日志中每一条该值前一行都是 `INFO redistribution: nombre retenu avant livraison aux voisins`（“交付给邻居之前保留的数量”）。② 该量按构造即非零：`N_1` 与 `N_2` 由 AN/BN+CN/DN≡1 互补，交付前只累加 `N_1`，故其值 = 本次调用的 hand-out 比例。③ v4 跑满 512 步，交付后致命判据**全程 0 次触发**（“non conservation du nombre total” 计数 0；stock 同 cfg 8 次并 STOP）⇒ **v4 修复后数量守恒**。④ 9.77e-6 与 5.4168e-4 同出 bug7_fpetrap5 的**同一判据点、两个不同子群体**（N_ancien 3.21e9 / 1.88e7），该 run 打完点仍跑到 Progress:100% ⇒ 只能是交付前那处，故“降 55 倍”的对照也不成立。⑤ 峰值实测 0.877（step 0），非 0.67；“残差增长”与自身数据矛盾（中途 0.67 > 终值 2.9e-4）。⑥ “数量非守恒属上游设计（凝并减粒子数）”归因不对口：凝并在 coagulation 模块，与本处 euler_coupled 重分配的中间量无关。**本项无缺陷、不计入 gate；未改动 core/runtime-windows 任何源码**。附带工具修正：`scripts/linux/probe_cell.py` 的致命关键字判据已改（只认 :424/:433 的 “…total !!”，并把信息性的 “sans STOP” 字面量排除），否则上游 :248/:259 的传递性打印会让任何走 euler_coupled 的格子恒判 failed。证据 install_logs/auto/q17_boundary/（v4）、q17_boundary_stock/（stock）、bug7_fpetrap5/、/tmp/bug7_fpetrap/scram（含 v4 主体的源码树）。",
+      "date": "2026-09-13"
     }
   },
   "note": "台账路径自 2026-09-11 起统一为 docs/linux_debugging/probe_ledger.json；此前脚本误写 docs/probe_ledger.json，与 brief/runbook/probe_backlog 文档不一致（已合并） | 2026-09-12 人工复核：Q-16 已答（重复交付为真因，除零另有其处）；新增 Q-17..Q-20；并修掉工具三处失真（auto_round 签名、probe_cell/run_service 判据分类、fuzz 覆写被预设吞掉）。"

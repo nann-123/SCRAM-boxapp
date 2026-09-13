@@ -36,8 +36,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 SCHEME_DIR = {"INTERNAL_MIXING": "internal_mixing", "EXTERNAL_MIXING": "external_mixing"}
-# 致命关键字：程序真的 STOMP/中止（这些才让格子判 failed）
-LOG_FATAL_PATTERNS = ["non conservation", "STOP", "NaN", "Program received signal", "segmentation"]
+# 致命关键字：程序真的 STOP/中止（这些才让格子判 failed）。
+# 判据按上游 euler_coupled.f90 的**活 STOP** 取值：只有 :425/:434 两处 "…total !!"（其后 :429/:438
+# 是活 STOP）算致命；:248/:258 的逐 bin "…ds algo!!"、以及 :371 那处（其 :375 是 `!STOP`）都是
+# 信息性打印，不进这一列——旧写法只写 "non conservation" 会把它们一并判成 failed（2026-09-13 复核）。
+LOG_FATAL_PATTERNS = ["non conservation du nombre total", "non conservation de la masse totale",
+                      "STOP", "NaN", "Program received signal", "segmentation"]
+# 信息性打印里的 STOP 字样：法语 "sans STOP"＝"不带 STOP"。裸匹配 "STOP" 会把跑满全程的正常
+# 运行判成 failed（2026-09-13 复核 Q-27 的 status=failed 就是这么来的，见 review_2026-09-13.md）。
+LOG_INFO_STOP_LITERAL = re.compile(r"sans\s+STOP", re.IGNORECASE)
 # 浮点标志：只说明某处发生过除零/无效运算，程序通常继续（见 2026-09-12 复核 §二 7c）。
 # 过去把它并进判据，导致任何走 euler_coupled 的格子永远 failed、真问题被淹没，故单列。
 LOG_FP_FLAG_PATTERNS = ["IEEE_INVALID", "IEEE_DIVIDE_BY_ZERO", "IEEE_OVERFLOW", "IEEE_UNDERFLOW"]
@@ -247,7 +254,9 @@ def main() -> int:
         fatal, flags = [], []
         if log_path.exists():
             text = log_path.read_text(errors="replace")
-            fatal = [p for p in LOG_FATAL_PATTERNS if re.search(re.escape(p), text, re.IGNORECASE)]
+            # 先把信息性的 "sans STOP" 字面量摘掉，再匹配致命关键字（否则裸 "STOP" 必中）
+            scanned = LOG_INFO_STOP_LITERAL.sub("INFO_NO_HALT", text)
+            fatal = [p for p in LOG_FATAL_PATTERNS if re.search(re.escape(p), scanned, re.IGNORECASE)]
             flags = [p for p in LOG_FP_FLAG_PATTERNS if re.search(re.escape(p), text, re.IGNORECASE)]
         report["log_keywords"][scheme] = fatal + flags
         report.setdefault("log_fp_flags", {})[scheme] = flags

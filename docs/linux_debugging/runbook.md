@@ -89,6 +89,27 @@
 
   P5 Windows 侧清单（截图/字体/打包）：只跟踪状态、登记，**不要尝试在 Linux 上生成发布资产**。
 
+【自主修复授权与边界（2026-09-12 新增）】
+  **背景**：移植层的缺陷几乎全部落在"配置/契约层"（base cfg、模板默认值、死控件、字段没落到核心），
+  这些路径守卫**只给黄灯 WARN、不阻塞**（白名单之外但非 runtime/windows）⇒ 授权 agent 自主修复。
+  **可自行诊断并修复**（无需先问，但每笔必须附证据）：
+    · 配置/契约层"没接上"类：死控件、字段未落到核心、模板/base cfg 默认值、tag_init/场景联动、排放窗口等
+    · 可改路径：app/services/**、app/config_binding/**、examples/configs/**、core/templates/**、
+      core/defaults/**、scripts/linux/**、proposals/**、docs/checktest/**
+  **每笔必须交"三件套"**：
+    ① 同一 cfg 改前/改后数值对比（或"逐位不变"的证据）
+    ② `scripts/linux/template_audit.py` 与 `config_roundtrip.py` 的输出
+    ③ 是否改变标准轮/深轮基线的声明（若改变，给出基线重置方法）
+  **仍须人工拍板（只出建议或 proposals/ 补丁，不要直接改）**：
+    · 改动物理设定 / 教学与论文口径（初值分布、论文源量级、排放量）
+    · 增删界面控件（牵连 i18n/手册/截图）
+    · core/executables_or_wrappers/runtime/windows/**（守卫硬失败，永久禁止）
+    · docs/screenshots/、docs/*_assets/、docs/validation_checklist.md
+    · scripts/package_app_windows.ps1、scripts/make_windows_devkit.ps1
+  **流程**：先登记（BUG_TRACKING 建条目 + port/upstream/needs-domain 标签）→ 再改 → 附三件套。
+  **注意**：改 app/** 与 examples/** 会让守卫每轮亮"WARN（需人工确认）"，这是预期、不是失败；
+  不要为了让灯变绿去把这些路径塞进守卫白名单（那会让"跨平台口径需人工确认"的保护失效）。
+
 【禁止事项（2026-09-12 新增）】
   · 不要改 `core/executables_or_wrappers/runtime/windows/` 下的任何源码或二进制（守卫 §1 会判硬失败）；
     核心问题一律产出 `proposals/` 补丁，由人工/Windows 侧落盘。
