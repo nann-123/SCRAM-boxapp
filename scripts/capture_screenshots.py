@@ -8,7 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+# Bug #10 修复：offscreen 平台插件的字体库是空的，截图里所有字形都会退化成
+# "□"。Windows 上必须用真实平台插件（windows）才能枚举系统字体；Linux 无显示
+# 会话时仍用 offscreen。
+os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform.startswith("win") else "offscreen")
 
 from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
@@ -26,18 +29,40 @@ _FONT_CHAIN = {
 }
 
 
+_FONT_FILES = {
+    "Windows": ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simsun.ttc",
+                "C:/Windows/Fonts/Deng.ttf"],
+    "Linux": ["/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+              "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"],
+}
+
+
 def pick_cjk_font(app: QApplication) -> str:
-    """Return the first available family in the platform CJK chain (else first entry)."""
+    """Return the first available family in the platform CJK chain.
+
+    Bug #10：字体库为空（例如 Windows 上的 offscreen 插件）时，先尝试显式注册
+    字体文件；若仍拿不到任何 CJK 字体则直接失败，避免静默产出满屏方框的截图。
+    """
     chain = _FONT_CHAIN.get(platform.system(), _FONT_CHAIN["Linux"])
-    try:
-        db = QFontDatabase()
-        fams = set(db.families())
-    except Exception:
-        fams = set()
+    fams = set(QFontDatabase.families())
     for name in chain:
         if name in fams:
             return name
-    return chain[0]
+    # 家族名拿不到时，尝试按文件注册
+    for path in _FONT_FILES.get(platform.system(), []):
+        if Path(path).exists():
+            font_id = QFontDatabase.addApplicationFont(path)
+            if font_id >= 0:
+                added = QFontDatabase.applicationFontFamilies(font_id)
+                for name in added:
+                    if name in chain:
+                        return name
+                if added:
+                    return added[0]
+    raise SystemExit(
+        f"没有可用的 CJK 字体（平台 {platform.system()}，字体库 {len(fams)} 个家族）。\n"
+        f"缺字体会让截图中所有文字渲染成方框。请安装以下任一字体后重试：{chain}"
+    )
 
 
 def _image_density(path: Path) -> float:

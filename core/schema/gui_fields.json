@@ -1,0 +1,260 @@
+{
+  "version": "1.0",
+  "purpose": "SCRAM BoxApp GUI 字段登记表（Phase 0）。把散落在 app/ 各处的字段信息集中成一份数据，供 scripts/check_field_registry.py 对账。本文件不改任何运行时行为。",
+  "conventions": {
+    "line_index": "cfg 文件行号（0 基）；'runtime_env' 表示不写进 cfg、只走环境变量；'after_xxx' 表示按表位置动态定位",
+    "subindex": "同一行里的第几个数",
+    "modes": "basic=基础模式可见 / advanced=仅高级模式可见 / structure=结构编辑页 / hidden=有控件但被隐藏 / none=没有任何控件",
+    "core_reads": "核心的 read(10,*) 是否读它",
+    "core_uses": "核心读了之后是否真的使用（false = 死标签）",
+    "widget_null_reason": "为什么没有控件"
+  },
+
+  "fields": [
+    {"key": "coefficient_file", "fortran_name": "Coefficient_file", "line_index": 0, "type": "path",
+     "widget": "text", "modes": ["hidden"], "label_key": "coefficient_file",
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "known_defect": null, "note": "控件被 _sync_visibility 无条件 setVisible(False)，只能从 cfg 载入"},
+
+    {"key": "with_coag", "fortran_name": "with_coag", "line_index": 1, "type": "bool_int",
+     "widget": "checkbox", "modes": ["basic"], "label_key": "with_coag",
+     "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
+     "known_defect": "#19", "note": "运行前会被 case_preset 覆盖（#19：explicit_keys 被 normalize 丢弃）"},
+
+    {"key": "with_cond", "fortran_name": "with_cond", "line_index": 2, "type": "bool_int",
+     "widget": "checkbox", "modes": ["basic"], "label_key": "with_cond",
+     "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
+     "known_defect": "#19", "note": "同上"},
+
+    {"key": "with_nucl", "fortran_name": "with_nucl", "line_index": 3, "subindex": 0, "type": "bool_int",
+     "widget": "checkbox", "modes": ["basic"], "label_key": "with_nucl",
+     "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
+     "known_defect": "#19", "note": "同上"},
+
+    {"key": "nucl_model", "fortran_name": "nucl_model", "line_index": 3, "subindex": 1, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "nucl_model",
+     "range": [0, 9], "valid_values": [1, 5],
+     "requires": {"with_nucl": 1},
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "silent_noop", "zh": "填 1 和 5 以外的值，成核会静默不发生（即使勾着「启用成核」）"},
+     "note": "1=硫酸-氨-水三元成核；5=论文验证专用硬编码分支（恒定硫酸盐源 2.29e-4 µg/m³/s）"},
+
+    {"key": "sulfate_computation", "fortran_name": "sulfate_computation", "line_index": 4, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "sulfate_computation",
+     "range": [0, 9], "valid_values": [0, 1],
+     "requires": {"with_cond": 1},
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "treated_as_other", "zh": "非 0 的值一律按「显式方法」处理"},
+     "note": "0=normal / 1=explicit"},
+
+    {"key": "dynamic_solver", "fortran_name": "dynamic_solver", "line_index": 5, "subindex": 0, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "dynamic_solver",
+     "range": [0, 9], "valid_values": [0, 1, 2],
+     "requires": {"any": [{"with_cond": 1}, {"with_nucl": 1}]},
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "hang", "zh": "填 3-9 会让核心死循环挂住（已实测：60s 未退出、无任何 Progress 输出，只能强杀）"},
+     "known_defect": "#24",
+     "note": "0=euler / 1=ETR / 2=ROS2"},
+
+    {"key": "tag_thrm", "fortran_name": "tag_thrm", "line_index": 5, "subindex": 1, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "tag_thrm",
+     "range": [0, 9], "valid_values": [],
+     "core_reads": true, "core_uses": false, "rewritten_by": [],
+     "known_defect": "#20",
+     "declared_at": "SRC/ModuleInitialization.f90:55",
+     "declaration_comment": "method for wet diameter computation 0 h2o 1 isorropia",
+     "note": "死标签：全核心 2 处命中 —— ModuleInitialization.f90:55 的声明、ModuleDiscretization.f90:89 的读取，**0 处使用**。声明处的注释显示作者本意是让它选「湿直径计算方法」（0=h2o / 1=isorropia），但选择逻辑从未接上"},
+
+    {"key": "redistribution_method", "fortran_name": "redistribution_method", "line_index": 6, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "redistribution_method",
+     "range": [0, 9], "valid_values": [2, 3, 4, 5, 6],
+     "requires": {"with_cond": 1},
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "known_upstream", "zh": "6=euler_coupled 本体已知数量不守恒（#7）；3/5 会让粒子数按方法定义大幅变化（#14，设计使然）；7-9 命中 CASE DEFAULT 静默不做重分配"},
+     "note": "2=Moving Diameter（论文口径，产品默认）"},
+
+    {"key": "redistribution_option", "fortran_name": null, "line_index": "runtime_env", "type": "enum",
+     "widget": "combo", "modes": ["advanced"], "label_key": "redistribution_option",
+     "valid_values": ["legacy", "core_conserv", "core_nogrow", "core_smallgrow"],
+     "requires": {"with_cond": 1},
+     "in_cfg": false,
+     "core_reads": false, "core_uses": false, "rewritten_by": ["normalize"],
+     "known_defect": "#12",
+     "note": "死控件：只走环境变量 SCRAM_RDB_CORE_CONSERV(_NAME)，核心不读任何 RDB 相关环境变量，cfg 里也无此字段"},
+
+    {"key": "init_scenario", "fortran_name": "init_scenario", "line_index": 7, "type": "int",
+     "widget": "combo", "modes": ["basic"], "label_key": "init_scenario",
+     "valid_values": [1, 2, 3],
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "gated_by": {"field": "tag_init", "value": 0, "zh": "只有 tag_init=0 时才真正影响初值；出厂配置 tag_init=1，所以选哪个都一样"},
+     "known_defect": "#16",
+     "note": "1=霾天 Hazy / 2=城市 Urban / 3=清洁 Clear"},
+
+    {"key": "tag_external", "fortran_name": "tag_external", "line_index": 8, "type": "int",
+     "widget": "checkbox", "modes": ["basic"], "label_key": "tag_external",
+     "valid_values": [0, 1],
+     "core_reads": true, "core_uses": true, "rewritten_by": ["mixing_assumption"],
+     "note": "0=初始内混 / 1=初始外混。管的是「初始怎么放」，不是「能不能表达外混」（后者是 n_frac）"},
+
+    {"key": "temperature", "fortran_name": "Temperature", "line_index": 9, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "temperature",
+     "range": [200.0, 400.0], "core_reads": true, "core_uses": true, "rewritten_by": []},
+
+    {"key": "pressure", "fortran_name": "Pressure", "line_index": 10, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "pressure",
+     "range": [10000.0, 200000.0], "core_reads": true, "core_uses": true, "rewritten_by": []},
+
+    {"key": "humidity", "fortran_name": "Humidity", "line_index": 11, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "humidity",
+     "range": [0.0, 1.0], "core_reads": true, "core_uses": true, "rewritten_by": []},
+
+    {"key": "tagrho", "fortran_name": "tagrho", "line_index": 12, "subindex": 0, "type": "int",
+     "widget": "combo", "modes": ["basic"], "label_key": "density_mode",
+     "valid_values": [0, 1], "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "nan", "zh": "初始质量全 0 且选「真实密度」时，核心按组分反算平均密度会得到 NaN（#4）"},
+     "note": "1=真实密度 / 0=固定密度"},
+
+    {"key": "fixed_density", "fortran_name": "fixed_density", "line_index": 12, "subindex": 1, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "fixed_density",
+     "range": [100.0, 5000.0], "requires": {"tagrho": 0},
+     "core_reads": true, "core_uses": true, "rewritten_by": []},
+
+    {"key": "final_time_hours", "fortran_name": "final_time", "line_index": 13, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "simulation_time",
+     "range": [0.01, 240.0], "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
+     "known_defect": "#19", "note": "运行前会被 case_preset 覆盖（#19）"},
+
+    {"key": "dtmin_seconds", "fortran_name": "dtmin", "line_index": 14, "type": "float",
+     "widget": "double_spin", "modes": ["basic"], "label_key": "dtmin_seconds",
+     "range": [0.001, 3600.0], "core_reads": true, "core_uses": false, "rewritten_by": [],
+     "known_defect": "#25",
+     "declared_at": "SRC/ModuleInitialization.f90:105",
+     "note": "死标签：全核心 3 处命中 —— ModuleAdaptstep.f90:293 的注释、ModuleDiscretization.f90:101 的读取、ModuleInitialization.f90:105 的声明，**0 处使用**。注释称 DTMIN/DTMAX「defined in time.inc」，但 time.inc 在本仓库不存在、也没有任何 INCLUDE 引用它；adaptime 计算新步长时（T_dt=T_dt*DSQRT(EPSER/n2err)）没有任何钳制 ⇒ 本意要做的「步长上下限」从未实现"},
+
+    {"key": "cut_dim", "fortran_name": "Cut_dim", "line_index": 15, "type": "float",
+     "widget": "double_spin", "modes": ["advanced"], "label_key": "cut_dim",
+     "range": [0.0, 100.0], "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "note": "原 cfg 注释写的是 Tag_eqilibirum，但核心实际读进 Cut_dim；Tag_equi 变量声明后从未使用"},
+
+    {"key": "n_sizebin", "fortran_name": "N_sizebin", "line_index": 16, "subindex": 0, "type": "int",
+     "widget": "spin", "modes": ["structure"], "label_key": "n_sizebin",
+     "range": [1, 200], "core_reads": true, "core_uses": true, "rewritten_by": ["normalize"],
+     "drives_dimensions": ["diameter_bounds", "init_bin_number", "emission_matrix", "species_records.bin_values"],
+     "note": "改它会触发直径边界重算；点「生成结构」会清空并重建所有表格"},
+
+    {"key": "kind_grid", "fortran_name": "kind_grid", "line_index": 16, "subindex": 1, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "kind_grid",
+     "range": [0, 9], "valid_values": [0, 1],
+     "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "danger": {"kind": "treated_as_other", "zh": "任何非 0 值都按「手动给边界」处理"},
+     "note": "0=自动生成边界 / 非 0=手动"},
+
+    {"key": "n_groups", "fortran_name": "N_groups", "line_index": 17, "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "n_groups",
+     "range": [1, 20], "requires": {"mixing_assumption": "EXTERNAL_MIXING"},
+     "core_reads": true, "core_uses": true, "rewritten_by": ["normalize"],
+     "note": "组内按内混、组间按外混"},
+
+    {"key": "n_species", "fortran_name": "N_species", "line_index": 18, "subindex": 0, "type": "int",
+     "widget": "spin", "modes": ["structure"], "label_key": "n_species",
+     "range": [1, 200], "core_reads": true, "core_uses": true, "rewritten_by": ["normalize"],
+     "drives_dimensions": ["species_records", "emission_matrix"],
+     "note": "核心从第 19 行起每个物种读一行 —— 此值与表格行数不一致会直接读崩"},
+
+    {"key": "tag_init", "fortran_name": "Tag_init", "line_index": 18, "subindex": 1, "type": "int",
+     "widget": null, "modes": ["none"], "label_key": null,
+     "widget_null_reason": "界面上完全没有这个控件，用户改不了",
+     "valid_values": [0, 1], "core_reads": true, "core_uses": true, "rewritten_by": [],
+     "known_defect": "#16",
+     "note": "0=用内置三套场景分布自动算初值；1=用配置里逐档写好的质量。它决定了 init_scenario 是否有效 —— 这是 #16 的成因"},
+
+    {"key": "kind_composition", "fortran_name": "kind_composition", "line_index": "after_diameter", "type": "int",
+     "widget": "spin", "modes": ["advanced"], "label_key": "kind_composition",
+     "range": [0, 9], "valid_values": [0, 1],
+     "core_reads": true, "core_uses": true, "rewritten_by": ["mixing_assumption"],
+     "danger": {"kind": "uninitialized", "zh": "填 2-9 时核心两个分支都不进，frac_bound 数组已分配但从未赋值（读未初始化内存）"},
+     "known_defect": "#21",
+     "note": "核心读入后：0=从文件读分数边界 / 1=自动生成。运行前会被 _with_mixing_assumption 强制改成 0"},
+
+    {"key": "n_frac", "fortran_name": "N_frac", "line_index": "after_kind_composition", "type": "int",
+     "widget": "spin", "modes": ["structure"], "label_key": "n_frac",
+     "range": [1, 50], "core_reads": true, "core_uses": true, "rewritten_by": ["mixing_assumption", "normalize"],
+     "drives_dimensions": ["fraction_bounds"],
+     "note": "真正决定「内混还是外混」的是它：n_frac=1 ⇒ 组成维度不存在（内混）；>1 ⇒ 可表达外混"}
+  ],
+
+  "app_only_fields": [
+    {"key": "mixing_assumption", "label_key": "mapping_scheme",
+     "widget": "combo", "modes": ["basic"],
+     "valid_values": ["INTERNAL_MIXING", "EXTERNAL_MIXING"],
+     "in_cfg": false, "locked": true,
+     "locked_reason": "载入任何 cfg 后恒为 EXTERNAL_MIXING（parse() 写死，cfg 里无此字段）",
+     "label_key_bug": "代码用 mixing_scheme_readonly_tip，JSON 里只有拼错的 mapping_scheme_readonly_tip ⇒ 解释文字不可见",
+     "known_defect": "#23",
+     "note": "这个名字和配置里的 mapping_scheme 是两个东西，容易混"},
+
+    {"key": "mapping_scheme", "label_key": null, "widget": null, "modes": ["none"],
+     "in_cfg": false, "core_reads": false,
+     "hardcoded_value": "DETERMINISTIC_NEAREST",
+     "widget_null_reason": "无控件；_collect_data 与 _with_mixing_assumption 都硬写 DETERMINISTIC_NEAREST",
+     "known_defect": "#15",
+     "note": "死配置：_coag_mapping_mode 判的是 scheme=='LEGACY'，而传入的实参是混合假设，条件永假 ⇒ 送给核心的 SCRAM_COEFF_REPARTITION_MODE 恒为 COAG_TARGET_NEAREST"},
+
+    {"key": "case_preset", "label_key": "case_preset", "widget": "combo", "modes": ["basic"],
+     "in_cfg": false,
+     "transforms": ["case_preset"],
+     "valid_values_count": 11,
+     "note": "11 个预设，各自给 with_coag/with_cond/with_nucl/duration_hours 一组建议值"},
+
+    {"key": "template_name", "label_key": "template_preset", "widget": "combo", "modes": ["basic"],
+     "in_cfg": false, "valid_values_count": 7, "note": "7 个模板 + __custom__"},
+
+    {"key": "experiment_name", "label_key": "experiment_name", "widget": "text", "modes": ["basic"],
+     "in_cfg": false, "note": "不写进 cfg，只用于结果目录命名"},
+
+    {"key": "ui_mode", "label_key": "view_mode", "widget": "combo", "modes": ["basic", "settings"],
+     "in_cfg": false, "valid_values": ["basic", "advanced"], "note": "只会存取 settings.json"},
+
+    {"key": "language", "label_key": "language", "widget": "combo", "modes": ["toolbar", "settings"],
+     "in_cfg": false, "valid_values": ["zh_CN", "en_US"], "note": "只存取 settings.json"},
+
+    {"key": "explicit_keys", "label_key": null, "widget": null, "modes": ["none"],
+     "in_cfg": false,
+     "widget_null_reason": "内部标记，用户不可见",
+     "dropped_by": ["normalize"],
+     "known_defect": "#19",
+     "note": "记录「用户显式改过哪些字段」，使案例预设不覆盖用户设置。#11 的修复靠它，但 _collect_data 结尾调用 normalize() 时被丢弃 ⇒ GUI 路径失效"}
+  ],
+
+  "transforms": [
+    {"name": "case_preset",
+     "where": "app/services/run_service.py:_with_case_preset",
+     "applies_when": "case_preset 能匹配上 CASE_PRESETS",
+     "rewrites": ["with_coag", "with_cond", "with_nucl", "final_time_hours"],
+     "respects": ["explicit_keys"],
+     "note": "explicit_keys 里列出的字段保留用户值，其余用预设建议值覆盖"},
+
+    {"name": "mixing_assumption",
+     "where": "app/services/run_service.py:_with_mixing_assumption",
+     "applies_when": "每次运行（无条件）",
+     "rewrites": ["n_frac", "tag_external", "kind_composition", "fraction_bounds"],
+     "note": "INTERNAL_MIXING：tag_external=0、n_frac=1、kind_composition=0、fraction_bounds=[0,1]；EXTERNAL_MIXING：n_frac≥3、kind_composition=0"},
+
+    {"name": "normalize",
+     "where": "app/config_binding/config_model.py:normalize",
+     "applies_when": "每次读写、每次运行（无条件）",
+     "rewrites": ["n_species", "n_sizebin", "n_frac", "n_groups", "redistribution_option",
+                  "species_records", "emission_matrix", "init_bin_number", "diameter_bounds", "fraction_bounds"],
+     "drops": ["explicit_keys"],
+     "note": "构造成只含固定键的新字典 ⇒ 未登记的键（如 explicit_keys）会被静默丢弃"}
+  ],
+
+  "archive": {
+    "path_in_results": "experiment_config.cfg",
+    "serialized_from": "main_window.py:_start_runs 中的 self.data（变换之前）",
+    "executed_serialized_from": "run_service.py:prepare_run 中变换之后的 data",
+    "consistent": false,
+    "known_defect": "#22",
+    "note": "归档用的是变换前的数据，实跑用的是变换后的数据 ⇒ 两者在任一变换生效时不同"
+  }
+}
