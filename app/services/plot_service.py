@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import re
 from collections import defaultdict
 from pathlib import Path
 
@@ -11,6 +12,22 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from app.services import deployment_paths
+
+# 核心写出的 CSV 由 Fortran 列表输出产生，少数非规格化值会丢掉指数标记：
+# 1.0332900803284679E-297 被写成 "1.0332900803284679-297"。直接用 float() 会抛 ValueError，
+# 让整张图（以及该 case 后续所有图）全丢。这里补回 E 再解析。
+_MALFORMED_FLOAT = re.compile(r"^([-+]?[0-9]*\.?[0-9]+)([-+][0-9]{2,3})$")
+
+
+def _to_float(text: str) -> float:
+    value = str(text).strip()
+    try:
+        return float(value)
+    except ValueError:
+        match = _MALFORMED_FLOAT.match(value)
+        if match:
+            return float(f"{match.group(1)}E{match.group(2)}")
+        raise
 
 
 class PlotService:
@@ -24,7 +41,7 @@ class PlotService:
         self.figure_root.mkdir(parents=True, exist_ok=True)
 
     def read_csv(self, path: Path) -> list[dict[str, str]]:
-        with path.open() as handle:
+        with path.open(encoding="utf-8", errors="replace") as handle:
             return list(csv.DictReader(handle))
 
     def generate_all(self, results_root: Path | None = None) -> None:
@@ -35,18 +52,48 @@ class PlotService:
         self._plot_case_timeseries()
         self._plot_logic_schematic()
 
+    # ------------------------------------------------------------------
+    # 辅助：读取一臂的时序 / 组成态数据
+    # ------------------------------------------------------------------
+    def _scheme_names(self, case_dir: Path) -> list[str]:
+        """列出该 case 下**真的有 timestep_summary.csv** 的臂（缺数据的臂不参与绘图）。"""
+        names = []
+        for scheme_dir in sorted(p for p in case_dir.iterdir() if p.is_dir()):
+            if (scheme_dir / "csv" / "timestep_summary.csv").exists():
+                names.append(scheme_dir.name)
+        return names
+
+    def _pick_reference_scheme(self, names: list[str]) -> str | None:
+        """参考臂从实际存在的臂里挑，而不是假设目录名。"""
+        for preferred in ("external_mixing", "EXTERNAL_MIXING"):
+            if preferred in names:
+                return preferred
+        return names[0] if names else None
+
+    def _anomaly_counts(self, case_dir: Path) -> dict[str, int]:
+        """汇总该 case 各臂的 anomaly_flags（核心自己判定的异常）。"""
+        counts: dict[str, int] = defaultdict(int)
+        for scheme_dir in sorted(p for p in case_dir.iterdir() if p.is_dir()):
+            path = scheme_dir / "csv" / "anomaly_flags.csv"
+            if not path.exists():
+                continue
+            for row in self.read_csv(path):
+                counts[row.get("anomaly_type", "unknown")] += 1
+        return dict(counts)
+
     def _plot_runtime(self) -> None:
         if not (self.results_root / "performance_summary.csv").exists():
             return
         rows = self.read_csv(self.results_root / "performance_summary.csv")
         labels = [f"{row['case_name']}\n{row['scheme']}" for row in rows]
-        values = [float(row["wallclock"]) for row in rows]
+        values = [_to_float(row["wallclock"]) for row in rows]
         colors = [self._scheme_color(row["scheme"]) for row in rows]
         plt.figure(figsize=(10, 5))
         plt.bar(range(len(values)), values, color=colors)
         plt.xticks(range(len(values)), labels, rotation=90, fontsize=7)
+        # 单位是秒，且这是机器墙钟时间（含负载噪声），不是模型算力的度量
         plt.ylabel("Wallclock (s)")
-        plt.title("Internal vs external mixing runtime comparison")
+        plt.title("Internal vs external mixing runtime comparison (wallclock, machine-dependent)")
         plt.tight_layout()
         plt.savefig(self.figure_root / "runtime_comparison.png", dpi=160)
         plt.close()
@@ -60,17 +107,28 @@ class PlotService:
         mass = defaultdict(dict)
         number = defaultdict(dict)
         for row in rows:
-            mass[row["case_name"]][row["scheme"]] = float(row["final_total_mass"])
-            number[row["case_name"]][row["scheme"]] = float(row["final_total_number"])
+            mass[row["case_name"]][row["scheme"]] = _to_float(row["final_total_mass"])
+            number[row["case_name"]][row["scheme"]] = _to_float(row["final_total_number"])
         x = np.arange(len(cases))
         width = min(0.8 / max(len(schemes), 1), 0.35)
+        # 缺失的臂用 0 高度 + 标注（原来用 np.nan，bar 会静默跳过，看起来像"没跑"而不是"缺数据"）
+        missing = sorted({(c, s) for c in cases for s in schemes if s not in mass[c]})
         plt.figure(figsize=(8, 4.5))
         for idx, scheme in enumerate(schemes):
             offset = (idx - (len(schemes) - 1) / 2) * width
-            plt.bar(x + offset, [mass[c].get(scheme, np.nan) for c in cases], width=width, label=scheme, color=self._scheme_color(scheme))
+            plt.bar(
+                x + offset,
+                [mass[c].get(scheme, 0.0) for c in cases],
+                width=width,
+                label=scheme,
+                color=self._scheme_color(scheme),
+                hatch="//" if any(cs[1] == scheme for cs in missing) else None,
+            )
         plt.xticks(x, cases, rotation=20)
-        plt.ylabel("Final mass")
+        plt.ylabel("Final total aerosol mass (ug/m3)")
         plt.title("Final mass comparison")
+        if missing:
+            plt.figtext(0.5, 0.005, f"missing data shown as 0 (hatched): {len(missing)} scheme-case cells", ha="center", fontsize=7)
         plt.legend()
         plt.tight_layout()
         plt.savefig(self.figure_root / "final_mass_comparison.png", dpi=160)
@@ -78,10 +136,19 @@ class PlotService:
         plt.figure(figsize=(8, 4.5))
         for idx, scheme in enumerate(schemes):
             offset = (idx - (len(schemes) - 1) / 2) * width
-            plt.bar(x + offset, [number[c].get(scheme, np.nan) for c in cases], width=width, label=scheme, color=self._scheme_color(scheme))
+            plt.bar(
+                x + offset,
+                [number[c].get(scheme, 0.0) for c in cases],
+                width=width,
+                label=scheme,
+                color=self._scheme_color(scheme),
+                hatch="//" if any(cs[1] == scheme for cs in missing) else None,
+            )
         plt.xticks(x, cases, rotation=20)
-        plt.ylabel("Final number")
+        plt.ylabel("Final total particle number (count, dimensionless)")
         plt.title("Final number comparison")
+        if missing:
+            plt.figtext(0.5, 0.005, f"missing data shown as 0 (hatched): {len(missing)} scheme-case cells", ha="center", fontsize=7)
         plt.legend()
         plt.tight_layout()
         plt.savefig(self.figure_root / "final_number_comparison.png", dpi=160)
@@ -94,101 +161,104 @@ class PlotService:
         for case_dir in sorted(runs_root.glob("*")):
             if not case_dir.is_dir():
                 continue
+            schemes = self._scheme_names(case_dir)
+            if not schemes:
+                continue
+            anomaly_note = self._anomaly_counts(case_dir)
             plt.figure(figsize=(8, 4.5))
-            for scheme_dir in sorted(case_dir.glob("*")):
-                if not (scheme_dir / "csv" / "timestep_summary.csv").exists():
-                    continue
-                rows = self.read_csv(scheme_dir / "csv" / "timestep_summary.csv")
-                times = np.array([float(row["time_seconds"]) for row in rows], dtype=float)
-                masses = np.array([float(row["total_mass"]) for row in rows], dtype=float)
+            for name in schemes:
+                rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
+                times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
+                masses = np.array([_to_float(row["total_mass"]) for row in rows], dtype=float)
                 plt.plot(
                     times,
                     masses,
-                    label=scheme_dir.name,
-                    color=self._scheme_color(scheme_dir.name),
-                    linestyle=self._scheme_linestyle(scheme_dir.name),
+                    label=name,
+                    color=self._scheme_color(name),
+                    linestyle=self._scheme_linestyle(name),
                     linewidth=2.1,
                     alpha=0.9,
                 )
             plt.title(f"{case_dir.name}: total mass")
             plt.xlabel("Time (s)")
-            plt.ylabel("Total mass")
+            plt.ylabel("Total aerosol mass (ug/m3)")
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_total_mass.png", dpi=160)
             plt.close()
             plt.figure(figsize=(8, 4.5))
-            for scheme_dir in sorted(case_dir.glob("*")):
-                if not (scheme_dir / "csv" / "timestep_summary.csv").exists():
-                    continue
-                rows = self.read_csv(scheme_dir / "csv" / "timestep_summary.csv")
-                times = np.array([float(row["time_seconds"]) for row in rows], dtype=float)
-                numbers = np.array([float(row["total_number"]) for row in rows], dtype=float)
+            for name in schemes:
+                rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
+                times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
+                numbers = np.array([_to_float(row["total_number"]) for row in rows], dtype=float)
                 plt.plot(
                     times,
                     numbers,
-                    label=scheme_dir.name,
-                    color=self._scheme_color(scheme_dir.name),
-                    linestyle=self._scheme_linestyle(scheme_dir.name),
+                    label=name,
+                    color=self._scheme_color(name),
+                    linestyle=self._scheme_linestyle(name),
                     linewidth=2.1,
                     alpha=0.9,
                 )
             plt.title(f"{case_dir.name}: total number")
             plt.xlabel("Time (s)")
-            plt.ylabel("Total number")
+            plt.ylabel("Total particle number (count, dimensionless)")
+            if anomaly_note:
+                note = ", ".join(f"{k} x{v}" for k, v in sorted(anomaly_note.items()))
+                plt.figtext(
+                    0.5, 0.005,
+                    f"! core-flagged anomalies: {note} (see csv/anomaly_flags.csv)",
+                    ha="center", fontsize=7, color="#b22222",
+                )
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_total_number.png", dpi=160)
             plt.close()
-            ref_dir = case_dir / "external_mixing"
-            ref_label = "external"
-            if not (ref_dir / "csv" / "timestep_summary.csv").exists():
-                ref_dir = case_dir / "deterministic_nearest"
-                ref_label = "nearest"
-            if not (ref_dir / "csv" / "timestep_summary.csv").exists():
+            ref_name = self._pick_reference_scheme(schemes)
+            if ref_name is None:
                 continue
+            ref_label = "external" if "external" in ref_name.lower() else ref_name
+            ref_rows = self.read_csv(case_dir / ref_name / "csv" / "timestep_summary.csv")
+            ref_times = np.array([_to_float(row["time_seconds"]) for row in ref_rows], dtype=float)
+            ref_mass = np.array([_to_float(row["total_mass"]) for row in ref_rows], dtype=float)
+            ref_number = np.array([_to_float(row["total_number"]) for row in ref_rows], dtype=float)
             plt.figure(figsize=(8, 4.5))
-            ref_rows = self.read_csv(ref_dir / "csv" / "timestep_summary.csv")
-            ref_times = np.array([float(row["time_seconds"]) for row in ref_rows], dtype=float)
-            ref_mass = np.array([float(row["total_mass"]) for row in ref_rows], dtype=float)
-            ref_number = np.array([float(row["total_number"]) for row in ref_rows], dtype=float)
-            for scheme_dir in sorted(case_dir.glob("*")):
-                rows = self.read_csv(scheme_dir / "csv" / "timestep_summary.csv")
-                times = np.array([float(row["time_seconds"]) for row in rows], dtype=float)
-                masses = np.array([float(row["total_mass"]) for row in rows], dtype=float)
-                number = np.array([float(row["total_number"]) for row in rows], dtype=float)
-                if scheme_dir.name == ref_dir.name:
-                    plt.plot(times, np.zeros_like(times), label=scheme_dir.name)
+            for name in schemes:
+                rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
+                times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
+                masses = np.array([_to_float(row["total_mass"]) for row in rows], dtype=float)
+                if name == ref_name:
+                    plt.plot(times, np.zeros_like(times), label=f"{name} (reference, identically 0)", linestyle=":", color="#888888")
                 else:
                     interp = np.interp(times, ref_times, ref_mass)
                     rel = (masses - interp) / np.maximum(np.abs(interp), 1.0e-20)
-                    plt.plot(times, rel, label=scheme_dir.name)
+                    plt.plot(times, rel, label=name, color=self._scheme_color(name))
             plt.title(f"{case_dir.name}: relative mass difference vs {ref_label}")
             plt.xlabel("Time (s)")
-            plt.ylabel("Relative difference")
+            plt.ylabel("Relative mass difference (dimensionless)")
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_relative_mass_vs_{ref_label}.png", dpi=160)
             plt.close()
             plt.figure(figsize=(8, 4.5))
-            for scheme_dir in sorted(case_dir.glob("*")):
-                rows = self.read_csv(scheme_dir / "csv" / "timestep_summary.csv")
-                times = np.array([float(row["time_seconds"]) for row in rows], dtype=float)
-                number = np.array([float(row["total_number"]) for row in rows], dtype=float)
-                if scheme_dir.name == ref_dir.name:
-                    plt.plot(times, np.zeros_like(times), label=scheme_dir.name)
+            for name in schemes:
+                rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
+                times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
+                number = np.array([_to_float(row["total_number"]) for row in rows], dtype=float)
+                if name == ref_name:
+                    plt.plot(times, np.zeros_like(times), label=f"{name} (reference, identically 0)", linestyle=":", color="#888888")
                 else:
                     interp = np.interp(times, ref_times, ref_number)
                     rel = (number - interp) / np.maximum(np.abs(interp), 1.0e-20)
-                    plt.plot(times, rel, label=scheme_dir.name)
+                    plt.plot(times, rel, label=name, color=self._scheme_color(name))
             plt.title(f"{case_dir.name}: relative number difference vs {ref_label}")
             plt.xlabel("Time (s)")
-            plt.ylabel("Relative difference")
+            plt.ylabel("Relative number difference (dimensionless)")
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_relative_number_vs_{ref_label}.png", dpi=160)
             plt.close()
-            self._plot_external_mixing_state(case_dir)
+            self._plot_external_mixing_state(case_dir, ref_name)
 
     def _plot_logic_schematic(self) -> None:
         plt.figure(figsize=(8, 4))
@@ -208,23 +278,30 @@ class PlotService:
         plt.savefig(self.figure_root / "internal_vs_external_mixing_logic.png", dpi=160)
         plt.close()
 
-    def _plot_external_mixing_state(self, case_dir: Path) -> None:
-        external_dir = case_dir / "external_mixing" / "csv"
+    def _plot_external_mixing_state(self, case_dir: Path, ref_name: str) -> None:
+        # 用实际挑出来的参考臂，而不是写死目录名
+        external_dir = case_dir / ref_name / "csv"
         mass_path = external_dir / "size_composition_mass.csv"
         number_path = external_dir / "size_composition_number.csv"
         if not mass_path.exists() or not number_path.exists():
             return
         mass_rows = self.read_csv(mass_path)
         number_rows = self.read_csv(number_path)
-        mass_series = self._mixed_fraction_series(mass_rows, "mass")
-        number_series = self._mixed_fraction_series(number_rows, "number")
+        # 未混合档必须由**该臂自己的数据**推出，不能用写死的编号：
+        # 档号跟着 N_frac 变（实测 gmd_paris_full 是 20 个组成档、初始有质量的是 1/12/14/15，
+        # 而写死的 {1,3,6,11,20} 只命中 1 个），写死会让"混合粒子分数"在纯外混初值上误报 0.94。
+        unmixed_bins = self._derive_unmixed_bins(mass_rows)
+        if not unmixed_bins:
+            return
+        mass_series = self._mixed_fraction_series(mass_rows, "mass", unmixed_bins)
+        number_series = self._mixed_fraction_series(number_rows, "number", unmixed_bins)
         if not mass_series or not number_series:
             return
         plt.figure(figsize=(8, 4.5))
         plt.plot([row[0] for row in mass_series], [row[1] for row in mass_series], label="mixed mass fraction")
         plt.plot([row[0] for row in number_series], [row[1] for row in number_series], label="mixed number fraction")
         plt.xlabel("Time (s)")
-        plt.ylabel("Fraction")
+        plt.ylabel("Mixed-particle fraction (dimensionless)")
         plt.ylim(0.0, 1.05)
         plt.title(f"{case_dir.name}: mixed particle fraction in external representation")
         plt.legend()
@@ -232,36 +309,55 @@ class PlotService:
         plt.savefig(self.figure_root / f"{case_dir.name}_external_mixed_fraction.png", dpi=160)
         plt.close()
 
-        final_timestep = max(int(float(row["timestep"])) for row in mass_rows)
+        final_timestep = max(int(_to_float(row["timestep"])) for row in mass_rows)
         by_size = defaultdict(lambda: {"mixed": 0.0, "unmixed": 0.0})
         for row in mass_rows:
-            if int(float(row["timestep"])) != final_timestep:
+            if int(_to_float(row["timestep"])) != final_timestep:
                 continue
-            state = "unmixed" if int(float(row["composition_bin"])) in {1, 3, 6, 11, 20} else "mixed"
-            by_size[int(float(row["size_bin"]))][state] += float(row["mass"])
+            state = "unmixed" if int(_to_float(row["composition_bin"])) in unmixed_bins else "mixed"
+            by_size[int(_to_float(row["size_bin"]))][state] += _to_float(row["mass"])
         sizes = sorted(by_size)
         mixed = np.array([by_size[size]["mixed"] for size in sizes], dtype=float)
         unmixed = np.array([by_size[size]["unmixed"] for size in sizes], dtype=float)
         plt.figure(figsize=(8, 4.5))
         plt.bar(sizes, unmixed, label="unmixed", color="#f58518")
         plt.bar(sizes, mixed, bottom=unmixed, label="mixed", color="#4c78a8")
-        plt.xlabel("Size bin")
-        plt.ylabel("Mass")
+        plt.xlabel("Size bin index (1..N_sizebin)")
+        plt.ylabel("Aerosol mass (ug/m3)")
         plt.title(f"{case_dir.name}: final external mixing-state mass by size bin")
         plt.legend()
         plt.tight_layout()
         plt.savefig(self.figure_root / f"{case_dir.name}_external_mixing_mass_by_size.png", dpi=160)
         plt.close()
 
-    def _mixed_fraction_series(self, rows: list[dict[str, str]], column: str) -> list[tuple[float, float]]:
-        unmixed_bins = {1, 3, 6, 11, 20}
+    def _derive_unmixed_bins(self, mass_rows: list[dict[str, str]]) -> set[int]:
+        """推出"哪些组成档是未混合的（每个分组内只有一个物种）"。
+
+        口径：**t=0 有质量的组成档即未混合档**。依据是物理不变量——纯外混初值
+        （tag_external=1，配方为单组分纯粒子）在 t=0 不该有任何混合态粒子，
+        所以 t=0 出现的那些档按定义就是"未混合"档。
+
+        已知边界：该推导只在"t=0 是纯外混"时成立。若某臂 t=0 本身就含混合粒子
+        （内混臂，或初始已是混合组成），这里会低估未混合集合——使用时需结合
+        `scripts/linux/audit_plots.py` 的判据（纯外混初值的混合分数必须为 0）交叉确认。
+        """
+        at_zero = [
+            int(_to_float(row["composition_bin"]))
+            for row in mass_rows
+            if int(_to_float(row["timestep"])) == 0 and _to_float(row["mass"]) > 0.0
+        ]
+        return set(at_zero)
+
+    def _mixed_fraction_series(
+        self, rows: list[dict[str, str]], column: str, unmixed_bins: set[int]
+    ) -> list[tuple[float, float]]:
         totals: dict[int, dict[str, float]] = defaultdict(lambda: {"time": 0.0, "total": 0.0, "mixed": 0.0})
         for row in rows:
-            timestep = int(float(row["timestep"]))
-            value = float(row[column])
-            totals[timestep]["time"] = float(row["time_seconds"])
+            timestep = int(_to_float(row["timestep"]))
+            value = _to_float(row[column])
+            totals[timestep]["time"] = _to_float(row["time_seconds"])
             totals[timestep]["total"] += value
-            if int(float(row["composition_bin"])) not in unmixed_bins:
+            if int(_to_float(row["composition_bin"])) not in unmixed_bins:
                 totals[timestep]["mixed"] += value
         series = []
         for timestep in sorted(totals):

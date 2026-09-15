@@ -261,7 +261,11 @@ contains
 	wet_m(j)=size_mass_av(k)
       endif
     enddo
-    total_PH=-log10((total_IH/1.D6)/ (total_water/1.d9))
+    if (total_IH .GT. 0.D0 .AND. total_water .GT. 0.D0) then
+       total_PH=-log10((total_IH/1.D6)/ (total_water/1.d9))
+    else
+       total_PH=0.D0
+    endif
 	 
   end subroutine update_wet_diameter
   

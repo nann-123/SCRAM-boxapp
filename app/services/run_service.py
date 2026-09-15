@@ -6,6 +6,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -554,14 +555,26 @@ class RunService:
             entries.append(existing)
         env["LD_LIBRARY_PATH"] = ":".join(entries)
 
-    # 致命：程序真的中止（Fortran STOP / 浮点陷阱中止 / 信号）
+    # 致命：程序真的中止（Fortran STOP / 浮点陷阱中止 / 信号）。
+    #
+    # 口径与 scripts/linux/probe_cell.py 的 LOG_FATAL_PATTERNS 对齐（2026-09-15）。三条约束缺一
+    # 就会把正常跑完的运行判成 failed：
+    #   ① 只认核心那两处**带活 STOP** 的守恒检查（euler_coupled.f90:424/433），文案是
+    #      "…total !!"；:248/:259 的逐 bin 打印同样是 "non conservation …" 但文案是 "…ds algo!!"，
+    #      所以必须用更长的 "non conservation du nombre total" / "…de la masse totale" 区分，
+    #      不能用裸 "non conservation"。
+    #   ② 裸 "STOP" 会命中信息性打印里的法文 "sans STOP"（= 不带 STOP），先摘掉再匹配。
+    #   ③ 不再匹配裸 "negatif"：同文件里负值提示有带 STOP 与不带 STOP 两种，裸匹配会把
+    #      不带 STOP 的那几处（提示后即 return，属正常路径）误判为崩溃。真崩溃已由 ② 之外的真 STOP 覆盖。
     _FATAL_LOG_PATTERNS: list[str] = [
-        "non conservation",
-        "negatif",
+        "non conservation du nombre total",
+        "non conservation de la masse totale",
         "STOP",
         "Program received signal",
         "segmentation fault",
     ]
+    # 信息性打印里的 STOP 字样：法文 "sans STOP" = "不带 STOP"。
+    _INFO_STOP_LITERAL = re.compile(r"sans\s+STOP", re.IGNORECASE)
     # 浮点标志：只表示发生过除零/无效运算，程序通常继续（复核 2026-09-12 §二 7c）。
     # 过去并入判据 → 任何走 euler_coupled 的格子恒判 failed；现在单列，不再致命。
     _FP_FLAG_PATTERNS: list[str] = [
@@ -581,9 +594,10 @@ class RunService:
             text = log_path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
             return raw_returncode
-        lower = text.lower()
+        # 先摘掉信息性的 "sans STOP" 字面量，否则裸 "STOP" 必中
+        scanned = self._INFO_STOP_LITERAL.sub("INFO_NO_HALT", text).lower()
         for pattern in self._FATAL_LOG_PATTERNS:
-            if pattern.lower() in lower:
+            if pattern.lower() in scanned:
                 return -1
         return raw_returncode
 
