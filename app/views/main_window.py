@@ -850,7 +850,9 @@ class MainWindow(QMainWindow):
         )
         emission_matrix = data.get("emission_matrix", [])
         n_species = len(species)
-        n_bins = len(data["init_bin_number"])
+        # 用 n_sizebin 而不是 len(init_bin_number)：nucl_model=5 时内核契约不含那三行，
+        # 该数组只是良构占位（Bug #9），拿它当列数会在 nl=5 下塌成 0 列。
+        n_bins = int(data["scalars"]["n_sizebin"])
         # Remove stale cell widgets before resizing (fixes +/- button residue from previous n_bins)
         for r in range(self.emission_table.rowCount()):
             for c in range(self.emission_table.columnCount()):
@@ -870,7 +872,7 @@ class MainWindow(QMainWindow):
                 self.emission_table.setItem(row, col + 1, QTableWidgetItem(str(value)))
             self.emission_table.setCellWidget(row, n_bins + 1, self._emission_actions_widget(row))
 
-        n_size = len(data["init_bin_number"])
+        n_size = int(data["scalars"]["n_sizebin"])
         self.initial_mass_table.setRowCount(len(species))
         self.initial_mass_table.setColumnCount(n_size)
         self.initial_mass_table.setHorizontalHeaderLabels([f"bin_{idx + 1}" for idx in range(n_size)])
@@ -902,7 +904,7 @@ class MainWindow(QMainWindow):
 
     def add_species_row(self, row: int) -> None:
         data = self._collect_data()
-        n_bins = len(data.get("init_bin_number", []))
+        n_bins = int(data["scalars"]["n_sizebin"])
         insert_at = min(max(row + 1, 0), len(data["species_records"]))
         new_id = insert_at + 1
         new_record = {

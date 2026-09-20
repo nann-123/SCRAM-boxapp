@@ -36,6 +36,27 @@ def _parse_species_comment(comment: str) -> tuple[str, str]:
 SUPPORTED_REDISTRIBUTION_OPTIONS = {"legacy", "core_conserv", "core_nogrow", "core_smallgrow"}
 SUPPORTED_MIXING_ASSUMPTIONS = {"INTERNAL_MIXING", "EXTERNAL_MIXING"}
 
+# 内核（SCRAM1.2/SRC/ModuleDiscretization.f90:129-136）在 nucl_model=5 时**按设计跳过**
+# `init_bin_number` + 两行 `init_bin_emission` 共三行：nucl_model=5 是自成一体的硬编码
+# 验证模式，初始化走 `if(nucl_model.eq.5)` 分支、排放硬编码 `gas_emision_rate(ESO4)`，
+# 这三个数组内核读了也不用。
+# 因此本写入器必须同步省略，否则文件指针错位 ⇒ 后续 diameter 读取读到这三行 ⇒
+# `Bad integer/real in list input` 崩溃（Bug #9）。
+# 注意：物种行内核是**无条件读入**的（同文件 :117-127），所以只有这三行是条件性的。
+NUCL_MODEL_HARDCODED = 5
+
+
+def _has_emission_block(scalars: dict[str, Any]) -> bool:
+    """cfg 是否应包含 init_bin_number + 两行 init_bin_emission（内核契约）。
+
+    返回 True 表示按标准格式写出/读入；False 表示 nucl_model=5 的 53 行精简格式。
+    取值无法解析时按标准格式处理（保守：宁可多写，由内核报错暴露）。
+    """
+    try:
+        return int(scalars.get("nucl_model", 0)) != NUCL_MODEL_HARDCODED
+    except (TypeError, ValueError):
+        return True
+
 
 class ConfigModel:
     def __init__(self, root: Path) -> None:
@@ -91,9 +112,27 @@ class ConfigModel:
             data["species_records"].append(record)
 
         after_species = species_start + n_species
-        data["init_bin_number"] = [float(value) for value in _tokens(lines[after_species])]
-        data["init_bin_emission_species_1"] = [float(value) for value in _tokens(lines[after_species + 1])]
-        data["init_bin_emission_species_2"] = [float(value) for value in _tokens(lines[after_species + 2])]
+        if _has_emission_block(data["scalars"]):
+            data["init_bin_number"] = [float(value) for value in _tokens(lines[after_species])]
+            data["init_bin_emission_species_1"] = [float(value) for value in _tokens(lines[after_species + 1])]
+            data["init_bin_emission_species_2"] = [float(value) for value in _tokens(lines[after_species + 2])]
+            diameter_line = after_species + 3
+        else:
+            # nucl_model=5：内核不消费这三个数组，填良构占位值，让内存模型与标准格式保持同形
+            # （GUI 的表格列数、validate() 的长度校验都依赖它）。
+            data["init_bin_number"] = [0.0] * n_sizebin
+            data["init_bin_emission_species_1"] = [0.0] * n_sizebin
+            data["init_bin_emission_species_2"] = [0.0] * n_sizebin
+            diameter_line = after_species
+            # 失败要显式：把 56 行格式喂给 nucl_model=5，必须报错而不是错位读出一堆垃圾。
+            leftover = [line for line in lines[diameter_line + 4:] if line.strip()]
+            if leftover:
+                raise ValueError(
+                    f"nucl_model={NUCL_MODEL_HARDCODED} 的配置不应包含 "
+                    f"init_bin_number/init_bin_emission 三行，但 {path} 尾部多出 "
+                    f"{len(leftover)} 行 ⇒ 写入器与内核契约不一致（Bug #9）。"
+                    f"若这是标准格式配置，请把 nucl_model 改为非 5 的值。"
+                )
         emission_matrix: list[list[float]] = []
         for idx in range(n_species):
             if idx == 0:
@@ -103,7 +142,6 @@ class ConfigModel:
             else:
                 emission_matrix.append([0.0] * n_sizebin)
         data["emission_matrix"] = emission_matrix
-        diameter_line = after_species + 3
         data["diameter_bounds"] = [float(value) for value in _tokens(lines[diameter_line])]
         data["scalars"]["kind_composition"] = int(_tokens(lines[diameter_line + 1])[0])
         data["scalars"]["n_frac"] = int(_tokens(lines[diameter_line + 2])[0])
@@ -154,19 +192,21 @@ class ConfigModel:
                 )
             )
 
-        lines.append(_format_line([self._format_scalar(value, "float") for value in normalized["init_bin_number"]], "## initial bin number"))
-        lines.append(
-            _format_line(
-                [self._format_scalar(value, "float") for value in normalized["init_bin_emission_species_1"]],
-                "## emission row 1",
+        # 这三行是条件性的：nucl_model=5 时内核按设计跳过，写入器必须同步省略（见 _has_emission_block）
+        if _has_emission_block(scalars):
+            lines.append(_format_line([self._format_scalar(value, "float") for value in normalized["init_bin_number"]], "## initial bin number"))
+            lines.append(
+                _format_line(
+                    [self._format_scalar(value, "float") for value in normalized["init_bin_emission_species_1"]],
+                    "## emission row 1",
+                )
             )
-        )
-        lines.append(
-            _format_line(
-                [self._format_scalar(value, "float") for value in normalized["init_bin_emission_species_2"]],
-                "## emission row 2",
+            lines.append(
+                _format_line(
+                    [self._format_scalar(value, "float") for value in normalized["init_bin_emission_species_2"]],
+                    "## emission row 2",
+                )
             )
-        )
         lines.append(_format_line([self._format_scalar(value, "float") for value in normalized["diameter_bounds"]], "## diameter bounds"))
         lines.append(_format_line([scalars["kind_composition"]], "## composition discretization mode"))
         lines.append(_format_line([scalars["n_frac"]], "## fraction sections"))
@@ -234,7 +274,9 @@ class ConfigModel:
             record["notes"] = str(record.get("notes", ""))
         normalized["species_records"] = species_records
 
-        normalized["init_bin_number"] = self._normalize_vector(normalized["init_bin_number"], n_sizebin, 1.0e3)
+        # nl=5 时这三个数组内核不读、也不写出，默认值必须是 0（原来固定填 1.0e3 会让预览表显示假的初始数浓度）
+        number_default = 1.0e3 if _has_emission_block(normalized["scalars"]) else 0.0
+        normalized["init_bin_number"] = self._normalize_vector(normalized["init_bin_number"], n_sizebin, number_default)
         normalized["init_bin_emission_species_1"] = self._normalize_vector(normalized["init_bin_emission_species_1"], n_sizebin, 0.0)
         normalized["init_bin_emission_species_2"] = self._normalize_vector(normalized["init_bin_emission_species_2"], n_sizebin, 0.0)
 

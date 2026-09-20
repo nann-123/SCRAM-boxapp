@@ -165,11 +165,14 @@ class PlotService:
             if not schemes:
                 continue
             anomaly_note = self._anomaly_counts(case_dir)
+            mass_all_zero = True
             plt.figure(figsize=(8, 4.5))
             for name in schemes:
                 rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
                 times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
                 masses = np.array([_to_float(row["total_mass"]) for row in rows], dtype=float)
+                if np.any(np.abs(masses) > 0.0):
+                    mass_all_zero = False
                 plt.plot(
                     times,
                     masses,
@@ -182,15 +185,22 @@ class PlotService:
             plt.title(f"{case_dir.name}: total mass")
             plt.xlabel("Time (s)")
             plt.ylabel("Total aerosol mass (ug/m3)")
+            if mass_all_zero:
+                # P9：数据全零时图看起来“正常”，加显著水印避免误读为“结果正常”
+                plt.figtext(0.5, 0.5, "NO NON-ZERO DATA", ha="center", va="center",
+                            fontsize=26, color="#cccccc", rotation=18)
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_total_mass.png", dpi=160)
             plt.close()
+            number_all_zero = True
             plt.figure(figsize=(8, 4.5))
             for name in schemes:
                 rows = self.read_csv(case_dir / name / "csv" / "timestep_summary.csv")
                 times = np.array([_to_float(row["time_seconds"]) for row in rows], dtype=float)
                 numbers = np.array([_to_float(row["total_number"]) for row in rows], dtype=float)
+                if np.any(np.abs(numbers) > 0.0):
+                    number_all_zero = False
                 plt.plot(
                     times,
                     numbers,
@@ -210,6 +220,9 @@ class PlotService:
                     f"! core-flagged anomalies: {note} (see csv/anomaly_flags.csv)",
                     ha="center", fontsize=7, color="#b22222",
                 )
+            if number_all_zero:
+                plt.figtext(0.5, 0.5, "NO NON-ZERO DATA", ha="center", va="center",
+                            fontsize=26, color="#cccccc", rotation=18)
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_total_number.png", dpi=160)
@@ -219,6 +232,13 @@ class PlotService:
                 continue
             ref_label = "external" if "external" in ref_name.lower() else ref_name
             ref_rows = self.read_csv(case_dir / ref_name / "csv" / "timestep_summary.csv")
+            # P7（2026-09-15 绘图核查）：相对差图把参考臂**线性插值**到各臂自己的时间网格上。
+            # 两臂步数本来就可能差很多（实测 78 vs 83、79 vs 635），插值会在粗步长一侧留下
+            # 折线伪影 ⇒ 必须在图上写明步数，否则读数时容易把伪影当物理。
+            step_note = ", ".join(
+                f"{n}={len(self.read_csv(case_dir / n / 'csv' / 'timestep_summary.csv'))} steps"
+                for n in schemes
+            )
             ref_times = np.array([_to_float(row["time_seconds"]) for row in ref_rows], dtype=float)
             ref_mass = np.array([_to_float(row["total_mass"]) for row in ref_rows], dtype=float)
             ref_number = np.array([_to_float(row["total_number"]) for row in ref_rows], dtype=float)
@@ -230,12 +250,23 @@ class PlotService:
                 if name == ref_name:
                     plt.plot(times, np.zeros_like(times), label=f"{name} (reference, identically 0)", linestyle=":", color="#888888")
                 else:
-                    interp = np.interp(times, ref_times, ref_mass)
-                    rel = (masses - interp) / np.maximum(np.abs(interp), 1.0e-20)
-                    plt.plot(times, rel, label=name, color=self._scheme_color(name))
+                    # 相对差的口径（2026-09-20 实测更正）：两臂**时间网格不同**（实测 78 vs 83 步），
+                    # 所以逐点相减得到的曲线包含两部分：真实的物理差异 + 步长尺度的采样成分。
+                    # 实测：中段振荡幅度 1.33e-2，粗化到 300 s 共同网格后降到 5.92e-3
+                    # ⇒ 振荡**不是**插值 bug，约一半是真实差异；但**单点的振荡不可当物理读**，
+                    # 要看趋势。这里把两臂都插值到公共网格（并集），并注明步数。
+                    grid = np.union1d(times, ref_times)
+                    arm_values = np.interp(grid, times, masses)
+                    ref_values = np.interp(grid, ref_times, ref_mass)
+                    rel = (arm_values - ref_values) / np.maximum(np.abs(ref_values), 1.0e-20)
+                    plt.plot(grid, rel, label=name, color=self._scheme_color(name))
             plt.title(f"{case_dir.name}: relative mass difference vs {ref_label}")
             plt.xlabel("Time (s)")
             plt.ylabel("Relative mass difference (dimensionless)")
+            plt.figtext(0.5, 0.005,
+                        f"common time grid (union of steps); {step_note}. "
+                        f"Sawtooth = real difference + step-scale sampling; read trends, not single points.",
+                        ha="center", fontsize=6.5, color="#666666")
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_relative_mass_vs_{ref_label}.png", dpi=160)
@@ -248,12 +279,19 @@ class PlotService:
                 if name == ref_name:
                     plt.plot(times, np.zeros_like(times), label=f"{name} (reference, identically 0)", linestyle=":", color="#888888")
                 else:
-                    interp = np.interp(times, ref_times, ref_number)
-                    rel = (number - interp) / np.maximum(np.abs(interp), 1.0e-20)
-                    plt.plot(times, rel, label=name, color=self._scheme_color(name))
+                    # 同相对质量图：两臂都插值到公共网格；振荡含采样成分，读数看趋势
+                    grid = np.union1d(times, ref_times)
+                    arm_values = np.interp(grid, times, number)
+                    ref_values = np.interp(grid, ref_times, ref_number)
+                    rel = (arm_values - ref_values) / np.maximum(np.abs(ref_values), 1.0e-20)
+                    plt.plot(grid, rel, label=name, color=self._scheme_color(name))
             plt.title(f"{case_dir.name}: relative number difference vs {ref_label}")
             plt.xlabel("Time (s)")
             plt.ylabel("Relative number difference (dimensionless)")
+            plt.figtext(0.5, 0.005,
+                        f"common time grid (union of steps); {step_note}. "
+                        f"Sawtooth = real difference + step-scale sampling; read trends, not single points.",
+                        ha="center", fontsize=6.5, color="#666666")
             plt.legend()
             plt.tight_layout()
             plt.savefig(self.figure_root / f"{case_dir.name}_relative_number_vs_{ref_label}.png", dpi=160)
@@ -338,8 +376,9 @@ class PlotService:
         所以 t=0 出现的那些档按定义就是"未混合"档。
 
         已知边界：该推导只在"t=0 是纯外混"时成立。若某臂 t=0 本身就含混合粒子
-        （内混臂，或初始已是混合组成），这里会低估未混合集合——使用时需结合
-        `scripts/linux/audit_plots.py` 的判据（纯外混初值的混合分数必须为 0）交叉确认。
+        （内混臂，或初始已是混合组成），这里会低估未混合集合——使用时可用「纯外混
+        初值的混合分数必须为 0」这一判据交叉确认（原先由已移除的
+        `scripts/linux/audit_plots.py` 自动核对）。
         """
         at_zero = [
             int(_to_float(row["composition_bin"]))

@@ -1,0 +1,64 @@
+*** What is SCRAM ***
+
+SCRAM is a size composition resolved aerosol model.
+It can simulate coagulation, condensation/evaporation and nucleation processes
+of externally mixed particles.
+
+*** Compilation and Installation ***
+
+First you should have a Linux system and
+make sure the construction tool: SCONS has already been installed.
+If not you can obtain it through the following instruction of the site below:
+http://www.scons.org/wiki/SconsTutorial1
+
+Then you can do the compilation by a simple commend:
+scons
+
+Required libraries :  netcdf
+
+*** Coefficient Repartition ***
+
+Two coefficient repartition data files are already provided under the
+main path:
+coef_s1_f1_b7.nc for internal mixing
+coef_s5_f3_b7.nc for external mixing
+
+If you want to compute those database by yourself, then you need
+to compile and install an separate program under the folder:
+COEF_REPATITION
+
+*** Run ***
+
+The program should be executed with a configuration file which
+contains all the initial condition and parametrization information.
+
+Two examples are provide under the folder:
+INIT
+
+For example, you can repeat the all dynamic external mixing
+simulation within the article with following command:
+./ProgramSCRAM INIT/cfg_megapole_01072009.cfg
+
+*** Contact ***
+If you have further questions, please contact:
+zhus@cerea.enpc.fr
+
+*** SCRAMBoxApp note: building and debugging this tree ***
+
+This tree is the **SCRAM 1.2 standalone core** (see `UPDATE_SCRAM1.2.md`). It is shared by both
+platforms, but each side uses it differently:
+
+- Linux: build and install the native core with `bash scripts/linux/build_runtime.sh` from the
+  repository root. That wrapper runs scons with `FC=gfortran CC=gcc` and installs the binary into
+  `core/executables_or_wrappers/runtime/linux/`.
+- Windows (manual development and debugging, verification/review, release packaging): the shipped
+  runtime is `runtime/windows/ProgramSCRAM.exe`; rebuilding it needs a Windows Fortran/C toolchain
+  (see the README in `runtime/windows/`). Packaging is done with `scripts/package_app_windows.ps1`
+  and `scripts/make_windows_devkit.ps1` — never from Linux.
+
+Do not run bare `scons` for a release build: the wrappers carry the required flags and the
+Windows/POSIX differences (`SRC/ModuleCoeffRepartitionBoxmodel.f90`, `coeff_make_dir`).
+
+The author's own validation tests live in `tests/` (`python3 tests/run_portable_validation12.py`,
+`python3 tests/run_validation.py --seconds 43200`); `ORIGINAL_SOURCE_SHA256.json` is the
+pre-upgrade hash baseline they ship.

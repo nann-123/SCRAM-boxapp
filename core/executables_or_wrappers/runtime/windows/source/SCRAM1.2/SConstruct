@@ -1,0 +1,162 @@
+#!/usr/bin/env python
+
+import os
+import SCons
+
+# User settings.
+
+include_path_list = ["SRC", "INC"]
+library_path = []
+
+fortran_compiler = os.environ.get("FC", "gfortran")
+fortran_linker = fortran_compiler
+
+safe_fp_flags = " -O2 -ffree-line-length-none -fno-fast-math -ffp-contract=off -frounding-math -fbacktrace " \
+                "-finit-integer=0 "
+debug_flags   = " -O0 -g -ffree-line-length-none -fcheck=bounds -fbacktrace -finit-integer=0 "
+
+#
+# Paths
+#
+
+# Main part, acting as a Makefile.
+# Nothing should be changed below.
+
+# Disable harmless warnings.
+SCons.Warnings.suppressWarningClass(SCons.Warnings.DuplicateEnvironmentWarning)
+
+# Compilation environment.
+env = Environment(ENV = os.environ)
+#env.Replace(CONFIGURELOG = "./.scons.log")
+
+mode = ARGUMENTS.get("mode", "safe")
+flags = safe_fp_flags
+if mode == "debug":
+    flags = debug_flags
+print("Build mode:", mode)
+# Whether to see compilation lines or prettier string.
+# if not ARGUMENTS.has_key("line"):
+if "line" not in ARGUMENTS:
+    env.Replace(F77COMSTR = "[F77] $SOURCE")
+    env.Replace(F90COMSTR = "[F90] $SOURCE")
+    env.Replace(FORTRANCOMSTR = "[FORTRAN] $SOURCE")
+    env.Replace(LINKCOMSTR = "[Linking] $TARGET")
+
+env.Replace(FORTRAN = fortran_compiler)
+env.Replace(F77 = fortran_compiler)
+env.Replace(F90 = fortran_compiler)
+env.Replace(F95 = fortran_compiler)
+env.Replace(LINK = fortran_linker)
+
+def split_flags(text):
+    return [token for token in text.split() if token]
+
+netcdf_fflags = split_flags(os.popen("nf-config --fflags 2>/dev/null").read().strip())
+netcdf_flibs = split_flags(os.popen("nf-config --flibs 2>/dev/null").read().strip())
+netcdf_cflags = split_flags(os.popen("nc-config --cflags 2>/dev/null").read().strip())
+netcdf_clibs = split_flags(os.popen("nc-config --libs 2>/dev/null").read().strip())
+
+for token in netcdf_fflags + netcdf_cflags:
+    if token.startswith("-I"):
+        include_path_list.append(token[2:])
+
+for token in netcdf_flibs + netcdf_clibs:
+    if token.startswith("-L"):
+        library_path.append(token[2:])
+
+link_libs = [token[2:] for token in netcdf_flibs + netcdf_clibs if token.startswith("-l")]
+link_flags = [token for token in netcdf_flibs + netcdf_clibs if not token.startswith("-l") and not token.startswith("-L")]
+
+env.Append(F77PATH = include_path_list)
+env.Append(FORTRANPATH = include_path_list)
+env.Append(F90PATH = include_path_list)
+env.Append(FORTRANFLAGS = flags)
+env.Append(F90FLAGS = flags)
+env.Append(LINKFLAGS = flags + " " + " ".join(link_flags))
+env.Append(LIBPATH = library_path)
+env.Append(LIBS = link_libs)
+
+conf = Configure(env)
+for library in ["netcdf", "netcdff"]:
+    conf.CheckLib(library)
+env = conf.Finish()
+
+############
+# Programs #
+############
+env_coef = env.Clone()
+   		      
+env.Program(target = "ProgramSCRAM",
+	    source = ['SRC/AtmoData/Aerosol.f',
+	                    'SRC/AtmoData/compute_binary_nucleation.f',
+	                    'SRC/AtmoData/compute_ternary_nucleation.f',
+	                    'SRC/AtmoData/compute_density.f',
+	                    'SRC/AtmoData/compute_bidisperse_coagulation.f90',
+	                    'SRC/AtmoData/compute_monodisperse_coagulation.f90',
+	                    'SRC/AtmoData/compute_general.f90',
+                            'SRC/rdb/test_mass_nb.f90',
+                            'SRC/rdb/redist_euler.f90',
+                            'SRC/rdb/euler_mass.f90',
+                            'SRC/rdb/euler_number.f90',
+                            'SRC/rdb/euler_coupled.f90',
+                            'SRC/rdb/hemen.f90',
+                            'SRC/rdb/moving_diam.f90',
+                            'SRC/isorropia/isorev.f',
+                            'SRC/isorropia/isofwd.f',
+			    'SRC/isorropia/isocom.f',
+	                    'SRC/H2O/aabsorp.c',
+                            'SRC/H2O/aabsparti.c',
+                            'SRC/H2O/amain.c',
+                            'SRC/H2O/amain_loc.c',
+                            'SRC/H2O/bmain.c',
+                            'SRC/H2O/bmain_loc.c',
+                            'SRC/H2O/bparti.c',
+                            'SRC/H2O/bunidriver.c',
+                            'SRC/H2O/kpart.c',
+                            'SRC/H2O/newt_rou.c',
+                            'SRC/H2O/oamain.c',
+                            'SRC/H2O/partfunc2.c',
+                            'SRC/H2O/thermoa.c',
+                            'SRC/H2O/thermob.c',
+                            'SRC/H2O/typea.c',
+                            'SRC/H2O/typeaabs.c',
+                            'SRC/H2O/typeb.c',
+                            'SRC/H2O/unidriver.c',
+                            'SRC/H2O/zsr.c',
+                            'SRC/H2O/unifac.f',
+                            'SRC/ModuleInitialization.f90',
+                            'SRC/ModuleCoagulationNearest12.f90',
+                            'SRC/ModuleConservativeRemap12.f90',
+                            'SRC/ModuleCoeffRepartitionBoxmodel.f90',
+                            'SRC/ModuleCoefficientRepartition.f90',
+                            'SRC/ModuleThermodynamics.f90',
+                            'SRC/ModulePhysicalbalance.f90',
+                            'SRC/ModuleRedistribution.f90',
+	                    'SRC/ModuleDiscretization.f90',
+                            'SRC/ModuleCondensation.f90',
+                            'SRC/ModuleResultoutput.f90',
+                            'SRC/ModuleCoagulation.f90',
+                            'SRC/ModuleCongregation.f90',
+                            'SRC/ModuleBulkequibrium.f90',
+                            'SRC/ModuleCondSurrIO.f90',
+                            'SRC/ModuleAdaptstep.f90',
+	                    'SRC/ProgramSCRAM.f90'])
+	                    
+
+# SCRAM1.2: the historical Fortran module names are not all recognized by
+# SCons' dependency scanner. Explicit ordering prevents missing .mod files
+# during a clean parallel build, while unrelated C/F77 work remains parallel.
+module_order12 = [
+    "ModuleInitialization", "ModuleCoagulationNearest12", "ModuleConservativeRemap12",
+    "ModuleCoeffRepartitionBoxmodel", "ModuleCoefficientRepartition",
+    "ModuleThermodynamics", "ModulePhysicalbalance", "ModuleRedistribution",
+    "ModuleDiscretization", "ModuleCondensation", "ModuleResultoutput",
+    "ModuleCoagulation", "ModuleCongregation", "ModuleBulkequibrium",
+    "ModuleCondSurrIO", "ModuleAdaptstep", "ProgramSCRAM"
+]
+for previous, following in zip(module_order12, module_order12[1:]):
+    env.Depends("SRC/" + following + ".o", "SRC/" + previous + ".o")
+
+# Direct source dependencies also track changes to scientific module interfaces.
+for module in module_order12:
+    env.Depends("SRC/" + module + ".o", Glob("SRC/Module*.f90"))

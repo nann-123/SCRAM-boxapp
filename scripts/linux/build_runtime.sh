@@ -14,7 +14,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SOURCE_DIR="$ROOT/core/executables_or_wrappers/runtime/windows/source/SCRAM1.1"
+SOURCE_DIR="$ROOT/core/executables_or_wrappers/runtime/windows/source/SCRAM1.2"
 RUNTIME_DIR="$ROOT/core/executables_or_wrappers/runtime/linux"
 DATA_DIR="$ROOT/core/executables_or_wrappers/runtime/windows"
 MODE="${1:-safe}"

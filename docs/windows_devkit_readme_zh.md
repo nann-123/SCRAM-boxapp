@@ -5,9 +5,11 @@
 本文所有路径都以开发包根目录为起点，例如 `D:\SCRAMBoxApp-WinDevKit`。如果你把包解压到其他位置，只需要把命令中的路径理解为相对路径即可。
 
 
-> **平台分工**：本开发包面向 **Windows** 侧的人工开发调试、核验审核与发布打包。**Linux** 侧只承担自动化定时排查
-> （构建 → 标准测试 → 不变量 → 探测），其工具链与文档位于仓库的 `scripts/linux/` 与 `docs/linux_debugging/`，
-> **不随本开发包分发**。两侧分工与不冲突规则见仓库根 `README.md` 的
+> **平台分工**：本开发包面向 **Windows** 侧的人工开发调试、核验审核与发布打包。**Linux** 侧负责从捆绑的
+> Fortran 源码构建本地核心并跑标准测试 / 对照运行（`scripts/linux/build_runtime.sh`）。
+> 移植期间曾有一套 Linux 自动化排查工具链（`scripts/linux/` 与 `docs/linux_debugging/`），
+> **已于 2026-09-20 随移植缺陷收口一并移除**（可从 git 历史找回）。
+> 两侧分工与不冲突规则见仓库根 `README.md` 的
 > "Development and debugging (Windows and Linux)" 一节。
 ## 1. 开发包目录总览
 
@@ -128,7 +130,7 @@ core\executables_or_wrappers\runtime\windows\INIT\
 SCRAM 初始化文件目录，例如气溶胶初始浓度、排放、分数等数据。
 
 ```text
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\
 ```
 
 SCRAM 原始核心源码。进阶学生如果要研究或重编底层算法，从这里开始。
@@ -136,13 +138,13 @@ SCRAM 原始核心源码。进阶学生如果要研究或重编底层算法，�
 常看的源码位置：
 
 ```text
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\ProgramSCRAM.f90
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\ModuleCoagulation.f90
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\ModuleCondensation.f90
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\ModuleRedistribution.f90
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\ModuleResultoutput.f90
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\SRC\rdb\
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\COEFF_REPARTITION\
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\ProgramSCRAM.f90
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\ModuleCoagulation.f90
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\ModuleCondensation.f90
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\ModuleRedistribution.f90
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\ModuleResultoutput.f90
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\SRC\rdb\
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\COEFF_REPARTITION\
 ```
 
 其中 `ModuleCoagulation.f90` 主要涉及凝并过程，`ModuleCondensation.f90` 主要涉及凝结过程，`ModuleRedistribution.f90` 和 `SRC\rdb\` 与粒径分布重分配有关，`ModuleResultoutput.f90` 与输出结果有关。
@@ -364,7 +366,7 @@ core\executables_or_wrappers\runtime\windows\ProgramSCRAM.exe
 如果学生要修改 Fortran/C/C++ 核心算法，才需要重编。源码位置是：
 
 ```text
-core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\
+core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\
 ```
 
 重新编译通常需要额外安装：
@@ -534,14 +536,14 @@ core\executables_or_wrappers\runtime\windows\ProgramSCRAM.exe
 ## 15. 建议分工
 
 
-> 本节只覆盖 Windows 侧的人工开发调试；Linux 侧的自动化定时排查见 `docs/linux_debugging/runbook.md`
-> （随仓库，不在本包内）。
+> 本节只覆盖 Windows 侧的人工开发调试。Linux 侧现在只需从捆绑源码构建本地核心并跑标准测试
+> （`scripts/linux/build_runtime.sh`）；移植期间那套自动化排查工具链与文档已于 2026-09-20 移除。
 GUI 方向学生：主要看 `app\views\main_window.py`、`app\i18n\`、`app\services\settings_service.py`。
 
 模型运行方向学生：主要看 `app\services\run_service.py`、`core\templates\`、`core\defaults\`。
 
 结果分析方向学生：主要看 `app\services\plot_service.py`、`app\services\report_service.py`。
 
-底层算法方向学生：主要看 `core\executables_or_wrappers\runtime\windows\source\SCRAM1.1\`。
+底层算法方向学生：主要看 `core\executables_or_wrappers\runtime\windows\source\SCRAM1.2\`。
 
 打包发布方向学生：主要看 `scripts\package_app_windows.ps1`、`scripts\make_windows_devkit.ps1`、`third_party\report_dependencies\windows\`。

@@ -314,7 +314,7 @@ class RunService:
         if preset:
             # Bug #11 修复（2026-09-11）：预设是"建议值"，不得覆盖显式设置。
             # explicit 由调用方给出（GUI 的 _collect_data 比较表单与预设建议值；
-            # probe_cell 的 --set）。列进去的键保留当前值，其余键用预设值补齐/套用。
+            # 探针/测试脚本可直接传入）。列进去的键保留当前值，其余键用预设值补齐/套用。
             explicit = set(explicit or ())
             preset_values = {
                 "with_coag": int(preset["with_coag"]),
@@ -473,7 +473,7 @@ class RunService:
             "executable_name": exe_name,
             "executable_sha256": self._sha256_file(exe_path),
             "executable_size": exe_path.stat().st_size if exe_path.exists() else 0,
-            "source_sha256": self._source_tree_hash(runtime_dir / "source" / "SCRAM1.1"),
+            "source_sha256": self._source_tree_hash(runtime_dir / "source" / "SCRAM1.2"),
         }
         manifest_path = runtime_dir / "runtime_manifest.json"
         if manifest_path.exists():
@@ -557,7 +557,8 @@ class RunService:
 
     # 致命：程序真的中止（Fortran STOP / 浮点陷阱中止 / 信号）。
     #
-    # 口径与 scripts/linux/probe_cell.py 的 LOG_FATAL_PATTERNS 对齐（2026-09-15）。三条约束缺一
+    # 口径 2026-09-15 曾与 scripts/linux/probe_cell.py 的 LOG_FATAL_PATTERNS 对齐（该脚本
+    # 已于 2026-09-20 随 Linux 自动排查工具链移除；下列口径保持有效）。三条约束缺一
     # 就会把正常跑完的运行判成 failed：
     #   ① 只认核心那两处**带活 STOP** 的守恒检查（euler_coupled.f90:424/433），文案是
     #      "…total !!"；:248/:259 的逐 bin 打印同样是 "non conservation …" 但文案是 "…ds algo!!"，

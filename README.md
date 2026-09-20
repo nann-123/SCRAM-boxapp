@@ -17,11 +17,11 @@ Python app, the Windows runtime (`ProgramSCRAM.exe` plus the required DLLs), the
 Fortran source, the Windows launch/packaging scripts, and a Linux-native core under
 `core/executables_or_wrappers/runtime/linux/`.
 
-**Division of work** — **Linux** runs automated, scheduled troubleshooting only (build the native
-core → standard tests → invariants → probes → report). **Windows** is where manual development and
-debugging, verification/review of what Linux proposes, and release packaging happen. The Linux
-toolchain and documents live in `scripts/linux/` and `docs/linux_debugging/`; details and the four
-non-conflict rules are in
+**Division of work** — **Linux** builds and runs the native core (standard tests, comparison runs).
+**Windows** is where manual development and debugging, verification/review, and release packaging
+happen. During porting, a Linux-side automated troubleshooting toolchain lived in `scripts/linux/`
+and `docs/linux_debugging/`; it **has been retired (2026-09-20)** now that the porting defects are
+closed. The non-conflict rules it enforced are kept in
 [Development and debugging](#development-and-debugging-windows-and-linux).
 
 Parts of the full shared package described in this file are **not** included here:
@@ -109,7 +109,7 @@ The equivalent steps here are:
    ```
 
    This compiles `ProgramSCRAM` from
-   `core/executables_or_wrappers/runtime/windows/source/SCRAM1.1` with `gfortran` and the
+   `core/executables_or_wrappers/runtime/windows/source/SCRAM1.2` with `gfortran` and the
    system NetCDF libraries (`nf-config` / `nc-config`), then installs it to
    `core/executables_or_wrappers/runtime/linux/`, where the GUI looks for the platform
    runtime. A prebuilt copy is committed there; rerun the script after changing Fortran code.
@@ -208,14 +208,15 @@ Both platforms share the same application code; only the simulation core and the
 
 **Division of work**:
 
-- **Linux** — automated, scheduled troubleshooting only: build the native core, run standard tests,
-  check invariants, run probes, and report. Toolchain in `scripts/linux/`, documents in
-  `docs/linux_debugging/`, all outputs under `install_logs/auto/` (git-ignored).
-- **Windows** — manual development and debugging, verification/review of what Linux proposes, and
-  producing the release (installer, devkit package, release screenshots).
+- **Linux** — build the native core from the bundled Fortran source, then run the standard tests and
+  comparison runs. This is the CI-like side.
+- **Windows** — manual development and debugging, verification/review, and producing the release
+  (installer, devkit package, release screenshots).
 
-Both sides may edit shared application code and documents; the four rules below (enforced by
-`scripts/linux/check_windows_parity.sh`) keep them from conflicting.
+Both sides may edit shared application code and documents. The rules below keep them from
+conflicting; they were originally enforced automatically by `scripts/linux/check_windows_parity.sh`,
+which **has since been retired (2026-09-20)** — follow them manually, or reinstate the guard if the
+Linux debugging workflow is ever revived.
 
 | | Windows | Linux |
 |---|---|---|
@@ -225,34 +226,22 @@ Both sides may edit shared application code and documents; the four rules below 
 | Standard tests | `.\.venv\Scripts\python scripts\run_standard_tests.py …` (devkit README §6) | same command via `.venv/bin/python` |
 | Screenshots | `python scripts\capture_screenshots.py` → writes `docs/screenshots/` | `python scripts/capture_screenshots.py --out install_logs/shots` — **never overwrite the release assets** (the script pins the Windows UI font) |
 | Packaging / release | `scripts\package_app_windows.bat`, `scripts\make_windows_devkit.ps1` (devkit README §8/§13) | not available — do it on Windows |
-| Parity guard | `bash scripts/linux/check_windows_parity.sh` | `bash scripts/linux/check_windows_parity.sh` |
-
-### Linux debugging toolchain
+### Linux tooling
 
 | Script | Purpose | When |
 |---|---|---|
-| `scripts/linux/build_runtime.sh [safe\|debug]` | Build and install the Linux core from `source/SCRAM1.1` | after touching Fortran code |
-| `scripts/linux/auto_round.sh quick\|standard\|deep` | One verification round (guard → build → tests → metrics). A content signature skips rounds where nothing changed and appends one line to `install_logs/auto/digest.md` | scheduled (see the runbook) |
-| `scripts/linux/collect_metrics.py --round-dir …` | Extract invariants, compare with the previous round and the documented baselines | inside a round |
-| `scripts/linux/probe_cell.py` | Run one parameter cell and collect discovery signals (status, invariants, log keywords) | when hunting for new bugs |
-| `scripts/linux/probe_suggest.py [--matrix] [--mark …]` | Mine the source tree and coverage matrix for the next probes; record results in `docs/linux_debugging/probe_ledger.json` | each round |
-| `scripts/linux/check_windows_parity.sh` | Fails if Linux-side work would change the Windows release | before/after any change |
+| `scripts/linux/build_runtime.sh [safe\|debug]` | Build the Linux core from `source/SCRAM1.2` (`FC=gfortran CC=gcc scons mode=<mode>`) and install it into `runtime/linux/` | after touching Fortran code |
 
-All outputs are git-ignored: `install_logs/auto/<timestamp>/` (one directory per round),
-`install_logs/auto/digest.md` (rolling summary), `install_logs/auto/probes/` (probe results),
-`dist/linux-support/` (portable Linux bundle).
+> **Removed 2026-09-20.** The automated troubleshooting toolchain — `auto_round.sh`,
+> `collect_metrics.py`, `probe_cell.py`, `probe_suggest.py`, `noop_probe.py`,
+> `fuzz_invariants.py`, `template_audit.py`, `config_roundtrip.py`, `fidelity_check.py`,
+> `check_assets.py`, `audit_plots.py`, `check_windows_parity.sh`, `sync_manual_assets.py` — and its
+> documents (`docs/linux_debugging/`), probe fixtures (`docs/checktest/`) and core patches
+> (`proposals/`) were retired once the porting defects were closed. They remain reachable in git
+> history. `docs/BUG_TRACKING.md` is kept as the defect ledger; log/evidence outputs stay under the
+> git-ignored `install_logs/`.
 
-### Documents for Linux debugging and automation
-
-| Document | Role |
-|---|---|
-| `docs/linux_debugging/brief.md` | The rules: acceptance baselines, per-round flow, prohibitions, known pitfalls |
-| `docs/linux_debugging/runbook.md` | Day-to-day usage: the prompt to hand an agent, next-morning review, scheduling tiers |
-| `docs/linux_debugging/probe_backlog.md` | How new bugs are found: probe classes, coverage matrix, anti-stagnation rules |
-| `docs/linux_debugging/probe_ledger.json` | Machine-readable record of probed cells and hypotheses |
-| `docs/BUG_TRACKING.md` | Open bug queue (unchanged; the probe flow feeds it) |
-
-**Non-conflict rules** (enforced by `scripts/linux/check_windows_parity.sh`):
+**Non-conflict rules** (originally enforced by `scripts/linux/check_windows_parity.sh`, now retired):
 
 1. Never modify `core/executables_or_wrappers/runtime/windows/**` or the two Windows packaging
    scripts from the Linux side.
@@ -312,7 +301,7 @@ In this repository, use the GUI compare workflow or `scripts/run_standard_tests.
 - This repository verifies Windows execution (`ProgramSCRAM.exe` plus DLLs) and Linux execution
   (`runtime/linux/ProgramSCRAM`, built from the bundled Fortran source).
 - Linux execution requires a Linux-native `ProgramSCRAM`; `scripts/linux/build_runtime.sh` builds
-  it from `core/executables_or_wrappers/runtime/windows/source/SCRAM1.1`.
+  it from `core/executables_or_wrappers/runtime/windows/source/SCRAM1.2`.
 - Windows launch and packaging scripts are included, and the Windows runtime ships with a native `ProgramSCRAM.exe`.
 
 ## Troubleshooting

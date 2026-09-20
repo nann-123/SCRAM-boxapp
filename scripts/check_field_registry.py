@@ -8,7 +8,7 @@
   4) app/i18n/{zh_CN,en_US}.json       —— 标签是否两个语言都齐
   5) app/views/main_window.py         —— 界面上到底有没有这个控件
 
-退出码（沿用 scripts/linux/check_assets.py 的约定）：
+退出码（本仓库检查脚本的通用约定）：
   0 = 干净        3 = 只有已登记的已知项        1 = 出现未登记的新问题
 
 用法：python scripts/check_field_registry.py
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 REGISTRY = ROOT / "core" / "schema" / "gui_fields.json"
 SCHEMA = ROOT / "core" / "schema" / "config_schema.json"
-FORTRAN_SRC = ROOT / "core" / "executables_or_wrappers" / "runtime" / "windows" / "source" / "SCRAM1.1"
+FORTRAN_SRC = ROOT / "core" / "executables_or_wrappers" / "runtime" / "windows" / "source" / "SCRAM1.2"
 MAIN_WINDOW = ROOT / "app" / "views" / "main_window.py"
 
 known: list[str] = []      # 已在登记表里标了 known_defect 的

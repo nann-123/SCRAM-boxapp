@@ -56,9 +56,11 @@ This layout supports a shared read-only installation while keeping generated con
 ## Platform Roles
 
 - `windows/` — manual development/debugging, verification/review, and release packaging.
-- `linux/` — automated scheduled troubleshooting; built from `../windows/source/SCRAM1.1` via
-  `scripts/linux/build_runtime.sh`.
+- `linux/` — native core for the standard tests and comparison runs; built from
+  `../windows/source/SCRAM1.2` via `scripts/linux/build_runtime.sh`.
 - `mac/` — reserved (not present in this repository).
 
-Linux-side automation must never write into `windows/`; `scripts/linux/check_windows_parity.sh`
-verifies that before every scheduled round.
+Linux-side work must never write into `windows/`. This was verified by
+`scripts/linux/check_windows_parity.sh` before every scheduled round; that guard was retired on
+2026-09-20 together with the rest of the automated troubleshooting toolchain, so the rule now has
+to be observed by hand.

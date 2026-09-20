@@ -3,9 +3,181 @@
 > **自主修复授权（2026-09-12）**：配置/契约层缺陷（base cfg、模板默认值、死控件、字段未落到核心）授权 agent 自主修复，路径限 app/**、examples/**、core/templates/**、core/defaults/**、scripts/linux/**、proposals/**、docs/checktest/**；每笔须附"数值影响证明 + 模板/契约体检输出 + 基线声明"三件套，并**先在本表登记**。物理口径/界面控件/发布资产/runtime-windows 源码仍须人工拍板（见 runbook §1）。
 > **标签（2026-09-12 复核新增）**：每条另标 `port`（移植层，该修、计入闸门）/ `upstream`（本体固有，只记录、不计入闸门）/ `needs-domain`（需领域判断）。当前：upstream = #7、#2/#5、#14；needs-domain = #13；其余为 port。
 > **结论三分类（2026-09-12 复核新增）**：`confirmed-bug`（有夹具+判据）/ `evidence-only`（证据已列、待人工定性）/ `unexplained`（如 Q-06 的 RH 跳变，不得以 clean 结案）。
-> 创建日期: 2026-07-23 | 最后更新: 2026-09-14 | 本轮新增 #19–#24（界面契约层体检：`explicit_keys` 丢失、`tag_thrm` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；历史：#9 状态更正为「代码已修 / **Windows 发行核未生效**」；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
+> 创建日期: 2026-07-23 | 最后更新: 2026-09-20 | 本轮：**#9 归因更正 + 修复方向反转**（原记为内核「跳过却不消费」缺陷并改了 `ModuleDiscretization.f90`；实为 Python 写入器未复刻内核契约 ⇒ 现回退内核改动、只改 py 侧，**Windows 发行核无需重编译**）；此前 #19–#27（界面契约层体检：`explicit_keys` 丢失、`tag_thrm`/`dtmin` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
 >
-> **标签体系待修改（2026-09-14 建议）**：现行 `upstream` 标签把三类性质完全不同的东西混在一起，建议拆为 `upstream-defect`（真实现错误，如 #7/#9 → 需动核心）、`undefined-domain`（模型未定义域，如 #2/#5/#13 → 收权限即可消掉，不需要改核心）、`by-design`（有意为之，如 #14/#17 → 什么都不用做）。理由见 #19–#24 登记说明。
+> **标签体系待修改（2026-09-14 建议）**：现行 `upstream` 标签把三类性质完全不同的东西混在一起，建议拆为 `upstream-defect`（真实现错误，如 #7 → 需动核心）、`undefined-domain`（模型未定义域，如 #2/#5/#13 → 收权限即可消掉，不需要改核心）、`by-design`（有意为之，如 #14/#17 → 什么都不用做）。理由见 #19–#24 登记说明。
+> **2026-09-20 追加第四类 `port-defect`（移植契约缺陷）**：#9 原被归入 `upstream-defect` 并据此改了内核，实为**移植方未复刻内核约定** ⇒ 内核不该动，只需改 py 侧。判据（可复用）：**本体源码 `/home/yifeihu/SCRAM1.1` 的读取语句序列与仓库内核一致 ⇒ 缺陷必在移植侧**；`scripts/linux/config_roundtrip.py` 的 B 节已在自动比对这条。
+> ⚠️ 注意判据用**语句序列**而非逐字节：`ModuleDiscretization.f90` 在移植时被重排过缩进（全文 230 处差异，另有 `use CoeffRepartitionBoxmodel`、`Coefficient_file` 长度 40→256、`allocate(density_aer_size(N_size))` 等少数真实移植改动），逐字节比对会把格式差异误判成逻辑偏离。
+>
+> **2026-09-20 工具链收口（阅读本表前请先看这条）**：本表是**缺陷台账**，予以保留；但它大量引用
+> 的下列内容**已随 Linux 自动排查工具链一并移除**，相关引用均为**历史记录**（可从 git 历史找回）：
+> - 排查脚本：`scripts/linux/` 下的 `auto_round.sh`、`collect_metrics.py`、`probe_cell.py`、
+>   `probe_suggest.py`、`noop_probe.py`、`fuzz_invariants.py`、`template_audit.py`、
+>   `config_roundtrip.py`、`fidelity_check.py`、`check_assets.py`、`audit_plots.py`、
+>   `check_windows_parity.sh`、`sync_manual_assets.py`
+> - 文档与夹具：`docs/linux_debugging/`、`docs/checktest/`、`proposals/`
+> - 保留：`scripts/linux/build_runtime.sh`（构建 Linux 内核）、`scripts/run_standard_tests.py`、
+>   `scripts/check_field_registry.py` + `core/schema/gui_fields.json`
+>
+> 收口理由：多轮测试表明 **SCRAM 核心代码本身几乎没有问题**，绝大多数缺陷是移植层缺陷与静默控件
+> （死控件/被覆盖的界面选项），因此自动化排查的边际收益已耗尽。
+
+## 2026-09-20：升级到 SCRAM 1.2（本轮头条）
+
+内核由 **SCRAM1.1 升级为 SCRAM1.2**，源码树同时改名
+`core/executables_or_wrappers/runtime/windows/source/SCRAM1.1` → `.../SCRAM1.2`。
+来源：`/home/wangfangyuan/SCRAM1.2`（作者说明见该树的 `UPDATE_SCRAM1.2.md`，已一并纳入）。
+
+### 1. 79 文件 sha256 对照实验（作者声称"原始文件未改动"的复核）
+
+作者在 1.2 树里留下 `ORIGINAL_SOURCE_SHA256.json`（79 条：`INC/`5 + `INIT/`7 + `SRC/`66 + 根 1），
+两份 receipt 均记 `original_files_verified: 79` / `original_files_changed: []`。
+
+**独立重跑结果：65 一致 / 11 不一致 / 3 缺失。**
+
+- 11 不一致 = 1.2 **有意改写**的文件：`SConstruct`、`SRC/AtmoData/Aerosol.f`、
+  `ModuleAdaptstep`、`ModuleBulkequibrium`、`ModuleCoagulation`、`ModuleCoeffRepartitionBoxmodel`、
+  `ModuleCondensation`、`ModuleDiscretization`、`ModuleInitialization`、`ModulePhysicalbalance`、
+  `ModuleRedistribution`
+- 3 缺失 = 清理步骤删除：`ModuleBulkequibrium.f90.old`、`manual_compile.log`、`manual_compile3.log`
+  （后两者 sha 为**空文件的 sha256**，即本来就空）
+- 清单 mtime `2026-09-17 21:03`，而上述 `.f90` 改动在 `2026-09-18 08:27–08:39`
+  ⇒ **清单是"升级前快照"，不是"与 1.1 相同"的证明**；receipts 的 `original_files_changed: []`
+  应理解为「**2026-09-18 的目录清理步骤没有改动这些文件**」
+- ⚠️ 该实验**无法按原设计复跑**：生成/校验脚本已不在 1.2 树内，且 `SCOPE_REVIEW_RECEIPT.json`
+  引用的 `.backups/before_scope_review_20260918` 已被清理删除（见 `validation/CLEANUP_20260918.json`）
+- 建议：请作者按当前树重生成清单与 receipt，并保留校验脚本
+
+### 2. 移植层回合并
+
+| 项 | 处理 |
+|---|---|
+| **`coeff_make_dir` 平台分支（阻塞级）** | 1.2 删掉了该子程序，改成无条件 `execute_command_line('mkdir -p …')`，全树无 `OS`/`windir` 判断 ⇒ **Windows 上建目录会失败**。已回合并（POSIX `mkdir -p` / Windows `cmd /c if not exist … mkdir …`），并加注释说明缘由 |
+| `Coefficient_file`/`configuration_file` 长度 256 | 1.2 **已自带**，无需再改 ✅ |
+| `isorropia/isocom.f`、`isrpia.inc` | 仅**行尾差异**（仓库 LF / 1.2 CRLF），内容逐字节相同 ✅ |
+| `COEFF_REPARTITION/`、`INC/`、`coef_*.nc` | 完全相同 ✅ |
+| `COEFF_REPARTITION/example/ORIGIN.txt` | 仓库专有（子模块转普通目录的说明），保留 |
+| `INIT/cfg_megapole_01072009.cfg` | 1.2 第 1 行由系数文件名改为 `COAG_TARGET_NEAREST`（模式名）。内核两版处理逻辑相同（按扩展名判是否 `ReadCoefficient`）⇒ 语义兼容，但默认口径变了 |
+| `INIT/cfg_cond_only.cfg` | 1.2 新增，已纳入 |
+| `tests/`、`ORIGINAL_SOURCE_SHA256.json`、`UPDATE_SCRAM1.2.md` | 作者自带验证资产，已纳入留档 |
+| `ModuleBulkequibrium.f90.old`、`rdb/redist_euler.f90~` | 备份垃圾，未纳入 |
+
+引用同步：`source/SCRAM1.1` → `SCRAM1.2` 共 **11 处**（`run_service.py`、
+`check_field_registry.py`、`build_runtime.sh`、`runtime/{linux,windows}/README.md`、
+根 `README.md`×3、`docs/shared_runtime_layout.md`、`docs/windows_devkit_readme_zh.md`、
+`WINDOWS_DEVKIT_README_zh.md`、`config_model.py` 注释）。
+`.gitignore` 用的是 `runtime/*/source/**/ProgramSCRAM` 通配，无需改。
+
+### 3. 验证结果
+
+| 项 | 结果 |
+|---|---|
+| Linux 内核构建 | ✅ `bash scripts/linux/build_runtime.sh safe`，0 error；md5 `a60700a9`（连跑两次一致，可复现） |
+| 标准测试 | ✅ `import_smoke` / `gui_smoke` / `report_smoke` / `runtime_smoke` / `standard_tests` 五项全过 |
+| **Bug #9** | ✅ **仍修复**。两个 `nucl_model=5` 模板的 cfg 被内核正确解析（53 行契约成立），不再出现 `Bad integer/real in list input` |
+| 全模板扫描（7 模板 × 2 臂） | ⚠️ **5 个模板正常，2 个失败** —— 见下方新 Bug #28 |
+
+### 4. 新 Bug #28：`nucl_model=5` + 外混触发 1.2 新增的硬 STOP
+
+| 项目 | 内容 |
+|---|---|
+| **严重性** | 🔴 P1（阻塞 2 个模板的外混臂；影响 `gmd_hazy_condensation`、`gmd_hazy_coag_cond`） |
+| **归属** | ⚠️ **上游 `nucl_model=5` 设计洞（不是 1.2 缺陷、也不是我们 cfg 的错）**：该模式声明"不需要 `init_bin_number`"并跳过读它，但初始化分支 `ModuleDiscretization.f90:668-678` **仍在消费它** ⇒ **读未初始化内存**。1.2 只是把「静默用垃圾值」变成「显式 STOP」 |
+| **位置** | 消费点 `SRC/ModuleDiscretization.f90:668-678`（该块**1.1 就有**，HEAD 的 1.1 在 `:656`）；暴露点 `SRC/ModuleRedistribution.f90:127-136`（1.2 新增检查） |
+| **判据** | `(number(k)<=0 .and. sum(packed(k,:))>0) .or. (number(k)>0 .and. sum(packed(k,1:N_species))<=0)` ⇒ `error stop 'SCRAM1.2: orphan mass/number before remap'` |
+| **触发条件** | `nucl_model=5` **且** `tag_external=0` **且** `N_frac>1`（外混臂正好满足）。内混臂（`N_frac=1`）不走该分支 ⇒ 正常 |
+| **完整根因链（已逐环验证）** | ① nl=5 的 cfg **不含** `init_bin_number` 行（作者约定 + 我们 #9 修复后的 53 行写法，实测"含 initial bin number 的行数 = 0"）；② 内核 `:145` 的读取在 `if(nucl_model.ne.5)` 守卫内 ⇒ **nl=5 时从不读**，而 `:131` 只 `allocate` 不初始化 ⇒ 数组内容未定义；③ `:675` 却写 `concentration_number(j) = init_bin_number(k)`，同时 `:674` 把完整逐物种 `init_bin_mass(k,s)` 写进同一单元 ⇒ **有质量、数浓度取未定义值**；④ 本机该值恰为 0（k=7）⇒ 1.2 新检查判为 orphan ⇒ STOP |
+| **表现** | 外混臂第 1 步 `Calculation in progress...` 之后立即 `ERROR STOP`，`status=failed`、`steps=1` |
+| **实测定位（诊断构建）** | 触发点 `f=1, k=7`：该单元 `number=0` 但 `dry=1.2603962185956201`（完整 30 物种初值，`ESO4=0.06165`、`EBC=0.03126`）；同 k 的 `f=2` 全零；`f=3` 才是 nl=5 分支写的（`number=1922513.43`、`EBC=117.98`） |
+| **影响** | ① 两个 hazy 模板的外混臂在 1.2 默认配置下**完全无法运行**；② **更重要的历史含义**：1.1 时代这两个模板的外混臂"跑通"是**建立在未初始化内存之上的**，其数值（`Mass Cond` 2.919 / 1.388 等）**不可信**；③ 论文恒定硫酸盐源（`gas_emision_rate(ESO4)=2.29D-4`）的验证暂时做不了 |
+| **★ 对照实验（决定性）** | 设 `SCRAM_REDISTRIBUTION_MODE=legacy` 后同一案例 EXTERNAL 臂 `status=ok`（`mass=230.513076054`、`number=33771839324`）⇒ 差别**只在检查的存在与否**，不在初值数据。`conservative_remap12` 默认 `.true.`（`:86`），`scheme>=2` 时无条件走新内核（`ModuleRedistribution.f90:62-65`） |
+| **正确的修法（供作者参考）** | **不要**改回 `:145` 的条件读（那会破坏作者自己的 nl=5 约定，也是我们 #9 刚回退的方向）。应二选一：a) `:668-678` 分支在 nl=5 时改用 `number_init(k)` 作为数浓度来源；b) 让 nl=5 的 cfg 契约包含 `init_bin_number`（即约定改为"必须带"）。定性权在作者 |
+| **旁证** | 分数档循环用 `do f=1,N_fracmax`（=20），而 `N_frac=3` ⇒ 访问未使用档位。⚠️ 注意：**legacy 路径也循环 `N_fracmax`**，所以这不是 1.2 引入的问题（此前记录有误，已更正）。`N_fracmax`/`N_frac` 错配仍值得作者一并检查 |
+| **附带结论** | **Bug #7 在 1.2 默认配置下已被绕过**：`scheme>=2` ⇒ 走新内核 ⇒ 有缺陷的 `euler_coupled.f90` 不再被调用。因此 `bug7_method6_v5.patch` 随 1.2 升级一并作废（保留在 git 历史） |
+| **处置** | **需作者拍板**：a) 确认 nl=5 + 外混是否本就不该用（若是，产品侧把这两个模板改成内混或移除外混臂）；b) 若应可用，则需修 `redistribution_size12` 的判据或 nl=5 初始化补 `f=1` 档的数浓度。**不得自行放宽核心判据** |
+| **★ 有必要修吗（本轮评估）** | **必须登记，但产品侧不宜自行改内核。** 理由：① 触发面窄（仅 nl=5 × 外混）**但后果重** —— 1.1 时代该组合"跑通"是建在未初始化内存上，数字不可信；② 触发**可达**：GUI 上"比较内混/外混"按钮就会走到；③ 修法在**核心内部**（初值来源），属作者设计权，我们单方面改会与后续版本冲突。**产品侧的正确动作**：登记 + 在 UI 上对这两个模板的外混臂给出明确告警/禁用（比静默 STOP 好），并把"1.1 时代这两个模板外混臂数字不可信"写进文档 |
+| **临时绕行** | 产品侧可先把这两个模板的 `nucl_model` 从 5 改回 1（但会丢失论文源，冷凝空转，见 Q-18）—— 两者都不可接受，故**建议等作者答复** |
+
+### 附：Bug #7 method 6 四臂对照实验（2026-09-20 执行）
+
+目的：回答"1.2 到底是**修好了** method 6，还是只是**绕过**了它"。方法：同一模板、只切 `redistribution_method`
+与 `SCRAM_REDISTRIBUTION_MODE`，比较是否**逐位相同**。
+
+用模板 `gmd_paris_full`（`nucl_model=1`，避开 #28 干扰），12 h：
+
+| 臂 | INTERNAL_MIXING | EXTERNAL_MIXING |
+|---|---|---|
+| 默认内核 + `method=2` | ok，78 步，`32.5603969039` | ok，83 步，`32.6756421734` |
+| 默认内核 + `method=6` | ok，78 步，**逐位相同** | ok，83 步，**逐位相同** |
+| `SCRAM_REDISTRIBUTION_MODE=legacy` + `method=6` | **failed**，63 步 | **failed**，1 步 |
+| `SCRAM_REDISTRIBUTION_MODE=legacy` + `method=2` | ok，78 步，`32.5587359327` | ok，83 步，`32.6821742749` |
+
+**结论**：
+
+1. **默认下 method 号被完全忽略** —— 2 与 6 结果逐位相同，因为 `conservative_remap12`（默认 `.true.`）
+   把 `scheme>=2` 全部送进 `redistribution_size12()`，`euler_coupled.f90` 根本不被调用。
+2. **缺陷本体仍在**：`legacy` 模式下 method 6 立刻 `failed`（62 步 / 1 步时日志反复出现
+   `non conservation du nombre total !!`），而 method 2 同模式下 ok ⇒ 故障**确实只在 method 6 的
+   `euler_coupled` 路径**上，与 1.2 的其他改动无关。
+3. ⇒ 所以 `bug7_method6_v5.patch` 作废是**合理的**（那段代码已不在默认执行路径上），但**不是"已修"**。
+   一旦有人设 `SCRAM_REDISTRIBUTION_MODE=legacy` + `method=6`，缺陷会原样复现。
+4. 副作用提醒：默认模式下 2/3/4/5/6 等价 ⇒ **界面上的方法号下拉现在大部分取值是"死"的**
+   （只有 1 有区别：跳过尺寸重分布）。这与 #12/#15/#20 属同一类"控件与实际口径脱节"，建议在 UI 上注明。
+
+### 5. 数值基线全部作废并重算
+
+1.2 改动凝结传质（Kn=6D/(vd) + 全区间 Fuchs–Sutugin）、湿密度、moving-center dual-pivot 重分布
+⇒ 文档中所有 1.1 时代的数值基线**一概失效**。已重测：
+
+| 案例 | 1.1 基线 | **1.2 实测** | 变化 |
+|---|---|---|---|
+| `gmd_paris_full` INT | `32.73376655624839` / `1.0260805990e10`，88 步 | `32.669498799` / `10019885058.9`，**110 步** | 质量 −0.20% |
+| `gmd_paris_full` EXT | `33.751055266282556` / `1.1638880310e10`，540 步 | `32.8722503821` / `9897654593.9`，**743 步** | 质量 −2.60% |
+| `gmd_paris_full` 初始总质量 | `21.583170063260344` | `21.583170063260344` | **不变** ✅（初值口径未变） |
+| `tutorial_minimal`（coag_only） | INT `24.482042410429116` / `9.55750171385341e9` | INT `0.001479701` / `4103288416.59` | ⚠️ 见下 |
+| 两个 hazy 模板 | 初始总质量 `226.07444159907240`/`228.81807486240999` | 同值 | **不变** ✅ |
+
+> ⚠️ `tutorial_minimal` 的 1.1 基线（24.48）来自**手册口径的 baseline 基座**，与当前模板的
+> `teaching` 基座不是同一初值，两者本就不可比 —— 记录时需注明口径，避免误判为回归。
+> ⚠️ 上表 1.2 数值由临时运行器以 12 位有效数字打印；**完整精度的基线需要专用工具重采**，
+> 而原基线工具 `scripts/linux/collect_metrics.py` 已在 2026-09-20 随排查工具链移除。
+
+### 6. 绘图缺陷处置（按"当 bug 调试"口径，**不进标准测试**）
+
+原 `docs/checktest/绘图核查_20260915.md` 的重查结论见 `docs/绘图正确性核查_20260915.md`（已恢复）。
+本轮改动全部落在 `app/services/plot_service.py`：
+
+| 编号 | 内容 | 处置 |
+|---|---|---|
+| §二 | 组成档号硬编码 `{1,3,6,11,20}` | ✅ 已修（`e404efa`）`_derive_unmixed_bins()` 按 t=0 数据反推 |
+| §三 | 高位异常被图吞掉 | ✅ 已修：`_anomaly_counts()` + 标注 |
+| P1 | 缺 CSV 的臂导致崩溃 | ✅ 已修：`_scheme_names()` |
+| P2 | 参考臂目录名写死 | ✅ 已修：`_pick_reference_scheme()` |
+| P3 | 终态堆叠柱无人对过 | ✅ **核对通过，非缺陷**（逐位 = `final_mass`） |
+| P4 | 未显式 encoding | ✅ 已修 |
+| P5 | 纵轴无单位 | ✅ 已修 |
+| P6 | 参考臂恒零线无语义 | ✅ 已修（标注 `identically 0`） |
+| **P7** | `np.interp` 跨臂插值 | ⚠️ **实测定性**：原"插值伪影"假设被否证（粗化到 300 s 摆幅只降一半：`1.33e-2`→`5.92e-3`）⇒ 是**真差异 + 步长采样**。已改为两臂插到公共网格 + 图上注明。**附带线索**：振荡止于 t=2788.7 s，紧挨 #17 的排放窗口 2643.76 s |
+| P8 | wallclock 当性能指标 | ✅ 已修（标注 machine-dependent） |
+| **P9** | 全零数据照常出图 | ✅ 已修：叠 `NO NON-ZERO DATA` 水印（已看图验证） |
+| §五 | 把绘图判据写进标准测试 | ❌ **按人工决定取消**。绘图按缺陷修，`run_standard_tests.py` 不动 |
+
+验证：`py_compile` 通过；两个案例各 10 张图；`run_standard_tests.py` 五项全 ok（`import_smoke` /
+`gui_smoke` / `report_smoke` / `runtime_smoke` / `standard_tests`）。
+
+> 注：原自动判据脚本 `scripts/linux/audit_plots.py` 已随排查工具链移除，旧文档里的"三层判据"
+> **不再自动执行**；本表的核对是人工 + 看图完成的。
+
+### 7. 本轮遗留待办
+
+- [ ] **#28 需作者确认**（1.2 新增不变量 vs 我们初值的合法性问题）
+- [ ] 请作者重生成 `ORIGINAL_SOURCE_SHA256.json` 与两份 receipt（现与树不一致）
+- [ ] 完整数值基线重采（需先决定用什么工具替代已移除的 harness）
+- [ ] Windows 侧：`ProgramSCRAM.exe` 仍是 2026-05-15 的 1.1 构建，**与 1.2 源码不一致**，
+      需在 Windows 重编译（本机无 Fortran 工具链）
+- [ ] `docs/` 中仍有大量 1.1 时代的基线数字（手册、报告、本表历史行），需一并标注"1.1 口径"
+
+---
 
 ## 一页看懂（说人话）
 
@@ -23,14 +195,15 @@
 | 11 | 界面里改过程开关/时长被案例预设静默忽略 → 已修 |
 | 14 | 换重分配方法 3/5 时粒子数暴涨 → 查明是方法定义使然，不是缺陷（产品默认用方法 2） |
 | 1 | 零质量模板初始质量为 0 → 现在的模板基座都换成非零初值，该路径在应用内已不可达，转为自动检查 |
+| 9 | 选了「论文验证专用」成核模式（`nucl_model=5`）后运行会崩 → **原因在软件这边不在核心**：配置文件多写了内核按约定不收的 3 行，核心读串行了。已改成"这个模式下就不写这 3 行" ⇒ 修好了，**Windows 版不用重编译** |
+| 绘图核查 8 项 | 组成档号写死 / 参考臂目录名写死 / 缺 encoding / 纵轴缺单位 / 参考臂恒零线无语义 / 缺 CSV 的臂导致崩溃 / 全零数据照常出图 / 高位异常被图吞掉 → **全修**。另 1 项（终态堆叠柱自行聚合）核对后**确认无缺陷**（逐位等于 `final_mass`）。详见 `docs/绘图正确性核查_20260915.md` |
 
 ### B. 要在 Windows 上做的（机械动作，不需要你判断）
 
 | # | 一句话 | 怎么做 |
 |---|--------|--------|
-| 9 | "读配置文件会崩"的修复只进了 Linux 版，**没进 Windows 版** | 在 Windows 重编译核心 → 覆盖 `runtime/windows/` → 删掉用户目录下的暂存副本 → 跑标准测试 |
 | 10 | 三个目录共 26 张界面截图，文字全是方框 | **根因已修（2026-09-14）**：不是缺字体，是脚本强制 `offscreen` 平台导致 Qt 字体库为空 → 已改为平台自适应 + 字体回退。剩下只需跑 `python scripts/capture_screenshots.py` 重生成发布资产 |
-| 18 | 移植前后的数值差越过了合格线（十万分之一点四） | 与 #9 放在**同一次**重编译后重测 |
+| 18 | 移植前后的数值差越过了合格线（十万分之一点四） | 在 Windows 重编译核心后重测 |
 
 ### C. 要你拿主意的（多数不用写代码）
 
@@ -50,6 +223,7 @@
 | 13 | 零质量时内混/外混的粒子数差 4 个数量级 | 需物理判断：设计使然 or 缺陷 |
 | 2 / 5 | 零质量时两套凝并路径行为不一致（本体自带的老毛病） | 是否要修（要动核心 → 先出提案） |
 | 7 | 本体自带的"数量不守恒"老毛病 | 产品侧已绕开（模板默认改回方法 2）；要不要给本体打补丁由你定 |
+| 28 | **1.2 新增的检查**让"论文验证专用"成核模式（`nucl_model=5`）的**外混臂直接硬停**。根因不在 1.2：该模式下内核消费了一个**从未被读入**的数组（读的是未初始化内存）——1.1 一直在静默使用垃圾值，1.2 只是把它变成显式报错。**含义：1.1 时代这两个 hazy 模板外混臂的数字不可信** | a 请作者在核心侧改用 `number_init(k)`（推荐，改动最小）/ b 请作者把 nl=5 的 cfg 契约改成"必须带数浓度行" / c 产品侧先给这两个模板的外混臂加告警或禁用（不动内核，**可在等作者答复期间先做**） |
 
 ---
 
@@ -65,7 +239,7 @@
 | 6 | 🟡 P1 | 绘图 | ✅ 已修复 | `generate_all()` 不再传错参 |
 | 7 | 🔴 P2 | 重分配 | 🟡 上游缺陷；**产品侧已消除**（模板默认值改回 method=2）；v4 补丁待人工决定是否给本体打 | 根因（2026-09-12 复核定位）：`euler_coupled.f90:378-400` 把 hand-out 累加器**重复交付**（累加器按 `kloc(k)` 索引、交付循环按源 bin 迭代；本相位 `kloc≡1` ⇒ 交出量被加回两次 → 数量净增 0.054% → 第 423 行 STOP）；另有 `euler_coupled.f90:244` 的 `RQ(k)/Q(k)`（空 bin）与 `ModuleThermodynamics.f90:264` 的 `log10(0)`（teaching 基座无 IH）两处无保护除法。**该文件与本体 `/home/yifeihu/SCRAM1.1` 逐字节一致 ⇒ 属上游缺陷，非移植引入**；实测本体 exe + method=6（仅改 cfg 第 7 行）同样报 `non conservation`，相对误差 9.6e-3。v1/v2/v3 guard 无效的原因：guard 条件在本相位恒假（要求 `kloc(k)>1`），"与 stock 逐位相同"是必然。**处置**：① 产品侧把 `gmd_hazy_coag_cond` 模板默认 `redistribution_method` 6→2（与本体/论文口径一致）→ 模板从 failed 变 ok（`install_logs/auto/template_audit/`）；② 若要保留 method=6 演示，则给本体打 `proposals/bug7_double_add_v4.patch`（已验证 failed→ok、精确守恒，按守卫 §1 属 Windows/人工侧动作）；③ 残留 Q-17（边界 hand-out 丢弃 9.8e-6）随补丁一起考虑 |
 | 8 | 🟡 P1 | 运行 | ✅ 已修复 | gmd_hazy 正确检测为 `failed`（原误报 `ok`） |
-| 9 | 🔴 P1 | 初始化 | 🟡 **代码已修；Windows 发行核未生效**（2026-09-14 复核更正，原记 ✅ 已修复只对 Linux 成立） | 修复已在源码树内（`SRC/ModuleDiscretization.f90:129-136`：nucl_model=5 时改为**无条件读入**那 3 行，不再跳过却不消费）。**Linux 核**已验证：md5 `fb020540`，标准格式（56 行）配置**跑通**，初始总质量 `226.07444159907240` 与 2026-07-27 记录一致；手工删行的 53 行版本作废（可留作负对照，补丁后应报错）。现行报错文本为 `Bad integer for item 1`（与 7 月记录的 `Bad real number in item 8` 不同）。**但 Windows 发行核 `runtime/windows/ProgramSCRAM.exe`（sha256 `c9bb9df4…`，2026-05-15 构建）自初始提交起从未重建 ⇒ 该修复未进入用户侧成品，崩溃依旧存在；必须重编译 Windows 核**（原因与步骤见下方「平台推进状态」）。另附：Windows 标准测试数值核查发现全过程案例与既有基线不符，**待重编译后复测**（见下方「2026-09-14 Windows 标准测试数值核查」） |
+| 9 | 🔴 P1 | 初始化 | ✅ **已修复**（2026-09-20 更正方向：改 py 侧，内核保持本体原样） | **归因更正**：原记为内核「跳过却不消费」缺陷，实为**移植契约缺陷** —— 内核在 `nucl_model=5` 时**按设计跳过**那 3 行（该模式是自成一体的硬编码验证分支，这两个数组读了也不用；本体 `/home/yifeihu/SCRAM1.1/SRC/ModuleDiscretization.f90` 的读取语句序列与仓库原内核一致），而 Python 写入器 `config_model.py` 自初始提交 `b3cf6f7` 起**无条件写出**这 3 行 ⇒ 文件指针错位。**修复**：`7cc59c7` 对内核的改动**已回退**（恢复 `if(nucl_model.ne.5)`），改为 py 侧按 `nucl_model` 条件化写出/读入（`_has_emission_block`）。**实测**：① 原始内核 + 53 行夹具 → 退出码 0、初始总质量 `226.07444159907240`，与 2026-07-27 记录**逐位一致**；② 原始内核 + 56 行夹具 → `Bad integer for item 1 in list input` 崩溃（负例仍有效）；③ py 生成的 cfg 现为 53 行，跑原始内核退出码 0；④ `probe_cell --cfg docs/checktest/nucl_model5_fixed.cfg` 双臂 `status=ok`；⑤ 5 个 `nucl_model≠5` 模板输出**逐字节未变**（零回归）。新增守卫 `scripts/linux/check_cfg_contract.py`（修复前 4/16 项红灯、修复后 16/16 全绿）。**⇒ Windows 发行核（2026-05-15 构建）无需重编译即可生效**，原「必须重编译」的前提随之作废 |
 | 10 | 🟡 P1 | 文档资产 | 🟡 **根因已定位并修复脚本；资产待重生成**（2026-09-14 更新） | **根因不是缺字体，而是脚本强制了 `offscreen` 平台**：`scripts/capture_screenshots.py:11` 写 `os.environ.setdefault("QT_QPA_PLATFORM","offscreen")`，而 **Qt 的 offscreen 插件在 Windows 上返回空的字体库**（实测 `QFontDatabase.families()` = **0 个家族**；改用真实 `windows` 平台 = **140 个家族**，含脚本想要的 `Microsoft YaHei UI`）⇒ 所有字形退化为 □。**这意味着按原文"在有字体的 Windows 上重生成"永远修不好** —— 任何 Windows 机器上跑都会是方框。**已修脚本**（平台自适应 + 字体文件回退 + 拿不到 CJK 字体则显式报错退出），本机实测：`main_zh` 密度 **0.0115 → 0.0470**、`main_en` 0.0114 → 0.0368、`help_panel` 0.0066 → 0.0517，目视文字全部可读。**剩余**：三处发布资产（9+9+8 张）仍需重生成；自检对稀疏面板（`running_state`/`report_panel`/`settings_panel`/`results_view`）会误报 LOW 密度（已目视确认文字正常） |
 | 11 | 🟠 P1 | 运行 | ✅ 已修复（2026-09-11） | 预设改为"建议值"：显式设置优先——`run_service.prepare_run/_with_case_preset` 接受 `explicit_keys`（须在 normalize 之前取出，normalize 只保留固定键）；GUI `_collect_data` 把"与当前预设建议值不同"的键标为显式；`probe_cell --set` 的键自动标记。验证：① `noop_probe.py --template tutorial_minimal` 关掉凝并后终态数量变化 5.3e-3（此前报"覆写未生效"）；② 完整标准测试数值**逐位**与基线一致（EXT 33.7511 / INT 32.7338，540/88 步，五项 smoke 全过）→ 行为保持 |
 | 12 | 🟠 P1 | 运行/配置 | ❌ 未修复（2026-09-12 新发现） | GUI 的 `redistribution_option`（RDB 核心模式 legacy/core_conserv/core_nogrow/core_smallgrow）是**死控件**：app 仅经环境变量 `SCRAM_RDB_CORE_CONSERV`/`SCRAM_RDB_CORE_CONSERV_NAME` 传递（run_service.py:122-123），但编译的 Fortran（ModuleCoeffRepartitionBoxmodel.f90）只读 `SCRAM_COEFF_REPARTITION_MODE`（=映射方案，另一控件），对 RDB 核心模式**无任何变量/环境读取**，生成的 .cfg 也无此字段 → 选项永不生效。实测 gmd_paris_full（凝并开、540 步）四值终态**逐位相同**（EXT mass=33.751055266282556 / INT mass=32.73376655624839）。连带使 `docs/checktest/hazy_nogrow_{test,fixed}.cfg` 的 test/fixed 区分失效（二者 Fortran 可读字段逐字节相同）。已备夹具对 `redistribution_option_dead_{test,fixed}.cfg` 与 patch 提案 `proposals/bug12_rdb_core_mode_dead.patch` |
@@ -84,6 +258,7 @@
 | 25 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 新发现，与 #12/#15/#20 同类） | GUI「最小时间步 (秒)」`dtmin` 是**死标签**：全核心 3 处命中 —— `ModuleAdaptstep.f90:293` 的**注释**、`ModuleDiscretization.f90:101` 的**读取**、`ModuleInitialization.f90:105` 的**声明**，**0 处使用**。注释称 DTMIN/DTMAX「defined in time.inc」，但 **`time.inc` 在本仓库不存在**、也没有任何 `INCLUDE 'time.inc'` 语句；`adaptime` 计算新步长处（`T_dt = T_dt*DSQRT(EPSER/n2err)`，`:300`）**没有任何上下限钳制** ⇒ 注释里承诺的「keep new time step between DTMIN and DTMAX」从未实现。**含义**：界面上的「最小时间步」改任何值都不影响结果，且自适应步长实际没有下限保护。**发现方式**：由新增的 `scripts/check_field_registry.py`（字段登记表对账）自动报出 —— 该脚本对每个字段核对「核心是否读 / 读后是否用」，排除了声明行、注释行与读取语句本身 |
 | 26 | 🟠 P1 | 运行/对比功能 | ❌ 未修（2026-09-14 新发现） | **界面「比较 internal / external」在两臂上同时改了「表示能力」和「初始态」**：`_with_mixing_assumption` 的 INTERNAL 分支把 `tag_external` 强制为 0（`run_service.py:336`），而 EXTERNAL 分支**保留原值**（`:349`）。实测同一份配置做两臂变换：**出厂模板**（`tag_external=0`）→ 两臂只差 `n_frac`(1↔3) 与 `fraction_bounds`，对比干净；**用户载入的配置**（如 `zero_initial_mass_test.cfg`，`tag_external=1`）→ 两臂差 **3 项**：`n_frac`(1↔3)、**`tag_external`(0↔1)**、`fraction_bounds`。⇒ 后者的结果差异**不能只归因于内混/外混表示能力**，初始态也变了。附带：用户在结构编辑页设的 `n_frac` 与 fraction 表在两臂中都被静默改写（与 #23 同类）；比较运行只归档一份 `experiment_config.cfg`，而两臂各跑一份不同的 cfg（#22 的对比场景特例）。**2026-09-14 补充（自我更正）**：实测 `tag_init` **两臂始终相同**（按钮从不碰它）；且「内混臂强制 `tag_external=0`」**很可能不可避免** —— `n_frac=1` 时组成只有 1 段，「初始外混」在语义上无处安放；核心也正是这样用的（`ModuleDiscretization.f90:656` 专门处理 `tag_external=0 .and. N_frac.gt.1` 这一组合）⇒ **「是否算缺陷」需重新定性**，真正站得住的问题也许只是「界面没告诉用户两臂差异里包含初始态」 |
 | 27 | 🟠 P1 | 运行/健壮性 | ❌ 未修（2026-09-14 新发现） | **案例名含非 ASCII 字符时，结果 CSV 的编码不一致会让程序崩溃**：核心自带的结果写出（`SRC/ModuleCoeffRepartitionBoxmodel.f90:223`/`:1405` 写 `csv/timestep_summary.csv`，其中的 `testcase`/`process_combo` 取自环境变量 `SCRAM_TESTCASE`/`SCRAM_PROCESS_COMBO`）在 Windows 上按 **ANSI 码页（GBK）** 落盘，而 `run_service.summarize_run`（`:221`）用 `timestep_path.open()` **按 UTF-8** 读回 ⇒ `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc1 in position 289` 崩溃。**实测**：案例名传 `"零质量 + NEAREST"` → 崩溃；换 ASCII 标签 → 正常。**触发面**：GUI 默认流程的 `case_name` 取自案例预设（ASCII），故当前不会踩到；但任何把非 ASCII 作为 `case_name` 传入 `prepare_run` 的调用（如我们的探测脚本）都会崩。**另一层隐患**：路径本身也会含中文（结果目录用「实验名_案例预设」命名），核心能否打开中文路径未验证 |
+| 28 | 🔴 P1 | 初始化（**上游设计洞**） | ❌ 未修（2026-09-20 升级 1.2 时发现） | **`nucl_model=5` 时内核消费从未初始化的 `init_bin_number`**（详见上方 2026-09-20 章节 §4）：消费点 `ModuleDiscretization.f90:668-678`（**1.1 就有**），而 `:131` 只 `allocate`、`:145` 的读取被 `if(nucl_model.ne.5)` 跳过 ⇒ 读未初始化内存；1.2 在 `ModuleRedistribution.f90:127-136` 新增的不变量把它暴露为 `error stop 'SCRAM1.2: orphan mass/number before remap'`。实测触发点 `f=1, k=7`：有完整 30 物种质量 `1.2603962185956201` 而 `number=0`。**含义：1.1 时代这两个模板外混臂的数值建立在未初始化内存上，不可信** |
 
 ## Bug 总览
 
@@ -97,7 +272,7 @@
 | 6 | 🟡 P1 | 绘图 | GUI 单次运行不生成图片（传错参数） | GUI "运行"按钮 | `app/views/main_window.py` | `fix: _on_run_completed 传正确 results_root 给 generate_all` |
 | 7 | 🔴 P2 | 重分配 | `euler_coupled` redistribution 零质量/非零不均匀质量均触发非守恒 | `mass=0` 或 `mass≠0` 分布不均 + `with_cond=1` + `redistribution_method=6` | `SRC/rdb/euler_coupled.f90` | `fix: euler_coupled 质量/数量非守恒保护` |
 | 8 | 🟡 P1 | 运行 | Fortran 内部 STOP 返回 exit code 0，Python 误报成功 | Fortran 内部任何 STOP | `app/services/run_service.py` | `fix: 检测 run.log 异常关键字，标记 failed` |
-| 9 | 🔴 P1 | 初始化 | nucl_model=5 跳过 init_bin_number/emission 读取后文件位置错位 | nucl_model=5 + 配置含 init_bin_number/emission 行 | `SRC/ModuleDiscretization.f90:129-136` | `fix: nucl_model=5 时无条件读入 init_bin_number/emission 三行，修正文件指针错位`（Windows 发行核待重编译） |
+| 9 | 🔴 P1 | 初始化（移植契约） | nucl_model=5 时 cfg 多写了内核按约定不收的 3 行 ⇒ 文件指针错位 | nucl_model=5 + 配置含 init_bin_number/emission 行 | `app/config_binding/config_model.py`（内核保持本体原样） | `fix(port): 按 nucl_model 条件化写出/读入那三行；回退 7cc59c7 对 ModuleDiscretization.f90 的改动` |
 | 10 | 🟡 P1 | 文档资产 | 界面截图文字全渲染为方框（三处目录共 25 张） | 在缺中文字体的环境运行截图脚本 | `scripts/capture_screenshots.py`、`docs/screenshots/`、`docs/user_manual_zh_assets/`、`docs/undergrad_lab_assets/` | `fix: 截图脚本加字体回退链与生成后自检`（已做）；**图需在 Windows 重生成** |
 | 11 | 🟠 P1 | 运行 | Case Preset 在运行路径静默覆盖过程开关与运行时长 | 任何带 `case_preset` 的配置走 `prepare_run` | `app/services/run_service.py` | `fix: _with_case_preset 仅在调用方未显式设置时填预设（explicit_keys）` |
 | 12 | 🟠 P1 | 运行/配置 | `redistribution_option`（RDB 核心模式）死控件：app 经 env 传递但 Fortran 不读，四值终态逐位相同 | `redistribution_option` 任意值 + 任意模板 | `SRC/ModuleCoeffRepartitionBoxmodel.f90`（需新增 env 读取）+ `app/services/run_service.py` | `fix: Fortran 读取 SCRAM_RDB_CORE_CONSERV 并接入 RDB 核心模式分支` |
@@ -116,6 +291,7 @@
 | 25 | 🟠 P1 | 运行/配置 | `dtmin`（最小时间步）死标签：核心读了不用；注释承诺的步长上下限从未实现 | 改「最小时间步」后运行（任何值都无效） | `app/views/main_window.py`（移除控件）；若要生效需在 `SRC/ModuleAdaptstep.f90:adaptime` 补钳制（改核心 + 重编译） | 待人工：a 移除控件 / b 核心补 DTMIN/DTMAX 钳制 |
 | 26 | 🟠 P1 | 运行/对比功能 | 内外混对比在 `tag_external=1` 的配置上被混淆（两臂同时改表示能力与初始态） | 载入 `tag_external=1` 的 cfg 后点「比较 internal / external」 | `app/services/run_service.py`（`_with_mixing_assumption`） | 待人工：a 对比时把 `tag_external` 固定在两臂一致 / b 在界面标注该混淆 |
 | 27 | 🟠 P1 | 运行/健壮性 | 案例名含中文时结果 CSV 编码不一致（核心按 GBK 写、Python 按 UTF-8 读）→ 崩溃 | `prepare_run` 的 `case_name` 含非 ASCII 字符 | `app/services/run_service.py`（读写编码）；核心侧见 `ModuleCoeffRepartitionBoxmodel.f90:223` | `fix: 读写 CSV 统一显式 encoding="utf-8"（或 errors="replace"），核心侧另行提案` |
+| 28 | 🔴 P1 | 初始化（上游设计洞） | `nucl_model=5` 时内核消费从未初始化的 `init_bin_number`（1.2 新检查暴露为 `orphan mass/number before remap` 硬 STOP） | `nucl_model=5` **且** `tag_external=0` **且** `N_frac>1`（两个 hazy 模板的外混臂） | 消费点 `SRC/ModuleDiscretization.f90:668-678`（1.1 就有）；暴露点 `SRC/ModuleRedistribution.f90:127-136`（1.2 新增） | 待作者定性：a) 该分支在 nl=5 时改用 `number_init(k)`；b) 或把 nl=5 的 cfg 契约改为"必须带 `init_bin_number`"。**不要**改回 `:145` 的条件读（会破坏作者约定，也是 #9 刚回退的方向） |
 
 ### 实测模板对照表（base="teaching"，非零初始质量，2026-07-27）
 
@@ -234,32 +410,86 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 | **证据** | `gmd_hazy_coag_cond` 内部爆炸后 `performance_summary.csv` 仍显示 `status=ok` |
 | **修复** | Python 端 `run_prepared` 后检查 `run.log` 是否含异常关键字（`non conservation`, `STOP`, `NaN`） |
 
-### Bug #9: nucl_model=5 文件读取位置错位
+### Bug #9: nucl_model=5 的 cfg 与内核读取契约不一致（**归因已于 2026-09-20 更正**）
+
+> **一句话**：内核在「论文验证专用」成核模式（`nucl_model=5`）下**按设计不收**配置文件里的 3 行；软件这边却每次都写上去 ⇒ 核心读串行崩溃。**问题在软件侧，不在核心。**
 
 | 项目 | 内容 |
 |------|------|
-| **位置** | `SRC/ModuleDiscretization.f90:129-136` |
-| **触发条件** | `nucl_model=5` + 配置文件含 `init_bin_number` 和 2 行 `init_bin_emission` |
-| **表现** | `if(nucl_model.ne.5)` 跳过了 3 行读取，但文件指针未前进。后续 `read(10,*)(diameter(k),...)` 行读到 init_bin_number 数据，崩溃："Bad real number in item 8 of list input" |
-| **影响面** | `nucl_model=5` 无法解析任何标准格式配置（必须手工删除 init_bin_number + emission 行） |
-| **证据** | baseline12h 标准格式（56 行）→ 崩溃在 line 194；删除 init_bin_number+emission 后（53 行）→ 正常运行 |
-| **修复** | 去掉 `if(nucl_model.ne.5)` 判断，改为**无条件读入**这三行（对 `nucl_model≠5` 与旧码完全等价；对 `=5` 读入但不使用，仅使文件指针移到正确位置）。补丁见 `proposals/bug9_nucl_model5_file_pointer.patch`（现已应用，故 `git apply --check` 报不适用属预期） |
-| **测试配置** | `docs/checktest/nucl_model5_test.cfg`（未修复，56 行，可复现崩溃）/ `docs/checktest/nucl_model5_fixed.cfg`（手工修复，53 行，可运行） |
+| **位置（更正后）** | `app/config_binding/config_model.py`：`serialize()` 无条件写那三行、`parse()` 无条件读那三行，**两端都硬编码了「三行必在」** |
+| **内核契约（不变的事实）** | `SRC/ModuleDiscretization.f90:129-136` 用 `if(nucl_model.ne.5)` 守卫那三行。**这是有意的**：`nucl_model=5` 是自成一体的硬编码验证模式（初始化走 `:564`/`:674`/`:713` 的 `if(nucl_model.eq.5)` 分支，排放硬编码 `gas_emision_rate(ESO4)=2.29D-4`），`init_bin_number`/`init_bin_emission` 读了也不使用。对照：**物种行是无条件读入的**（同文件 `:117-127`，读了丢弃）⇒ 契约本身是**不对称**的 |
+| **归属铁证** | 本体源码 `/home/yifeihu/SCRAM1.1/SRC/ModuleDiscretization.f90`（作者原始树，2025-11-12）**同样**是 `if(nucl_model.ne.5)` 守卫，**读取语句序列与仓库内核一致**（`config_roundtrip.py` B 节自动比对通过）⇒ 内核无缺陷，是**移植方没有复刻这个约定**。（该文件在移植时重排过缩进，故非逐字节相同；逻辑语句本身一致） |
+| **触发条件** | `nucl_model=5` + 配置文件含 `init_bin_number` 和 2 行 `init_bin_emission`（即 Python 写入器的默认格式） |
+| **表现** | 那三行内核不消费 ⇒ 文件指针不前进；后续 `read(10,*)(diameter(k),...)` 读到 `init_bin_number` 数据 ⇒ `Bad real number/integer in list input` 崩溃。现行报错文本为 `Bad integer for item 1`（原文记的 `Bad real number in item 8` 是同因的另一种数据切分） |
+| **影响面** | ① 两个 GMD 验证模板（`gmd_hazy_condensation`、`gmd_hazy_coag_cond`，均设 `nucl_model=5`）在发行核上必崩；② 同一缺陷阻塞了 `probe_cell --cfg docs/checktest/nucl_model5_fixed.cfg` —— **53 行夹具连解析都过不去**（`parse()` 抛 `IndexError`），即内核契约格式的文件在 app 侧不可读 |
+| **修复（更正后）** | **py 侧**：新增单一判据 `_has_emission_block(scalars)`，`serialize()` 与 `parse()` 都跟随它；`parse()` 在 nl=5 时把偏移改到 `after_species` 本身，尾部若仍多出内容则**显式报 `ValueError`**（不再静默错位）；`normalize()` 的默认值不再给 nl=5 填 `1.0e3`。**内核侧**：回退 `7cc59c7` 对 `ModuleDiscretization.f90` 的改动，恢复本体原样 |
+| **配套** | `main_window.py` 的 bin 数来源由 `len(init_bin_number)` 改为 `int(scalars["n_sizebin"])`（否则 nl=5 时排放表/初始质量表会塌成 0 列） |
+| **守卫** | 新增 `scripts/linux/check_cfg_contract.py`：① 每个模板写出行数 == 契约行数且可往返；② 56 行文件喂 nl=5 必须报错；③ 53 行夹具必须读回且 diameter bounds 不错位。**修复前 4/16 项红灯，修复后 16/16 全绿** |
+| **测试配置** | `docs/checktest/nucl_model5_test.cfg`（56 行 = **错误格式负例**，内核必崩）/ `docs/checktest/nucl_model5_fixed.cfg`（53 行 = **内核契约正例**，内核跑通） |
 
-#### 平台推进状态：为什么 Windows 必须重编译（2026-09-14 Windows 侧复核）
+#### 实测记录（2026-09-20，Linux/gfortran 12.2）
+
+内核用**回退后的原始源码**重建（`bash scripts/linux/build_runtime.sh`，内含 `FC=gfortran CC=gcc scons mode=safe`，md5 `e2b5212b`）。回退前的"修复版"内核为 `fb020540`，它保存在 git 的 `runtime/linux/ProgramSCRAM` 里，可用 `git checkout 7cc59c7 -- <该路径>` 取回。
+
+| # | 实验 | 结果 |
+|---|------|------|
+| 1 | 原始内核 + `nucl_model5_fixed.cfg`（53 行） | ✅ 退出码 0，`inital total mass = 226.07444159907240`，与 2026-07-27 记录**逐位一致** |
+| 2 | 原始内核 + `nucl_model5_test.cfg`（56 行） | ❌ 退出码 2，`Bad integer for item 1 in list input`（负例有效） |
+| 3 | **py 生成的 cfg**（`gmd_hazy_condensation` 模板，改后 53 行）+ 原始内核 | ✅ 退出码 0 —— **这就是修复成立的决定性证据** |
+| 4 | `probe_cell --cfg docs/checktest/nucl_model5_fixed.cfg` | ✅ EXT/INT 双臂 `status=ok`，无 `Bad real` |
+| 5 | 全部 7 个模板 cfg 回归（改前 vs 改后逐字节比对） | ✅ **5 个 `nucl_model≠5` 模板完全相同（零回归）**；2 个 nl=5 模板恰好只少那三行 |
+| 6 | `check_cfg_contract.py`：改前 / 改后 | ❌ 4/16 失败 → ✅ 16/16 通过 |
+
+| 7 | **Linux 运行时内核刷新后**复测：① nl=5 + 53 行 → | ✅ 退出码 0（`228.81807486240999`） |
+| | ② nl=5 + 56 行（负例）→ | ❌ 退出码 2，`Bad integer for item 1`（负例仍有效） |
+| | ③ nl≠5（`gmd_paris_full`）+ 56 行 → | ✅ 退出码 0，`21.583170063260344`（与 #16 记录的基线**逐位吻合**） |
+| 8 | `probe_cell --template gmd_hazy_coag_cond`（不设 `SCRAM_PROGRAMSCRAM`，走 `run_service` 自己的运行时分派） | ✅ 双臂 `status=ok` |
+
+**证据**：`install_logs/bug9_20260920/`（被 `.gitignore` 忽略、不入库，含上表 1–7 的原始日志、改前/改后 7 个模板的 cfg；目录内有 `README.md` 索引）。
+
+#### ⚠️ 连带后果：被 git 跟踪的 Linux 运行时内核必须同步重建（2026-09-20 补）
+
+仓库里有**三个**容易混淆的二进制，务必分清：
+
+| 路径 | 类型 | git | 本次是否变动 |
+|---|---|---|---|
+| `runtime/windows/ProgramSCRAM.exe` | PE32+ Windows | ✅ 跟踪（仅 `b3cf6f7`） | **从未变过** —— 发行件，用户侧那份 |
+| `runtime/linux/ProgramSCRAM` | ELF Linux | ✅ 跟踪（`33c7f63`→`45de542`→`7cc59c7`） | **变了**：`fb020540` → `e2b5212b` |
+| `runtime/windows/source/SCRAM1.1/ProgramSCRAM` | ELF Linux | ❌ gitignore（scons 产物） | 变了：`fb020540` → `e2b5212b` |
+
+**第 2 个是必须动的**：`scripts/linux/build_runtime.sh` 的流程就是"在 `source/SCRAM1.1/` 跑 scons → `install` 到 `runtime/linux/`"，所以 `7cc59c7` 把 #9 的内核改动**编进了这个被跟踪的 Linux 内核**（md5 `fb020540`）。回退内核源码后若不重建它，就会出现**反向不兼容**：
+
+- `runtime/linux/ProgramSCRAM`（`fb020540`，无条件读）**要求 56 行** cfg
+- py 侧修好后 nl=5 **只写 53 行**
+- ⇒ Linux 上跑 `gmd_hazy_condensation`/`gmd_hazy_coag_cond` **必崩**（实测：退出码 2，`Bad real number in item 2`）
+
+**处置**：已执行 `bash scripts/linux/build_runtime.sh`（内部即 `FC=gfortran CC=gcc scons mode=safe` + `install`），`runtime/linux/ProgramSCRAM` 现为 `e2b5212b`，与回退后的源码一致。第 3 个（gitignore 的 scons 产物）随之同步，属正常构建产物刷新。
+
+> 关于"信息损失"：**没有**。`fb020540` 一直安全保存在 git 里的 `runtime/linux/ProgramSCRAM`（`git checkout 7cc59c7 -- <该路径>` 可随时取回），原先记录的"该二进制不在版本库内、无法用 git 恢复"是**错的**。被刷新的 55 个 `.o`/`.mod` 也是纯中间产物。
+> ⚠️ 用户态暂存副本仍需清理才能生效：`rm -rf ~/.local/state/scram_boxapp_mixing/runtime/linux`（GUI 检测到共享运行时变化会自动重暂存，强制刷新用这条；`build_runtime.sh` 输出里也有此提示）。
+
+#### 平台影响：Windows 发行核**无需重编译**（与原记录相反）
 
 | 项目 | 内容 |
 |------|------|
-| **源码状态** | 修复已在树内（`SRC/ModuleDiscretization.f90:129-136` 为无条件读入 + 说明注释）。因此 `proposals/bug9_nucl_model5_file_pointer.patch` 现在 `git apply --check` 报 "patch does not apply" 属**预期**（已应用过），不是缺陷 |
-| **Linux 核** | 已验证：重编译后 md5 `fb020540`，56 行标准格式跑通，初始总质量 `226.07444159907240` |
-| **Windows 发行核** | ❌ **未生效**：`core/executables_or_wrappers/runtime/windows/ProgramSCRAM.exe` sha256 `c9bb9df4faebc358…`（901362 B，文件时间 2026-05-15），在 git 中只出现于初始提交 `b3cf6f7`（2026-06-01），此后**从未重建**；`source/SCRAM1.1/ProgramSCRAM.exe` 与其逐字节相同，仓库内不存在更新的构建 |
-| **为什么必须重编译** | 源码（`.f90`）是"图纸"，`ProgramSCRAM.exe` 是"成品"，是**两个独立文件**：改了图纸，成品不会自动变，只有重新编译才会进入 exe。本修复（提交 `7cc59c7`，2026-09-11）与平台判断改动（提交 `45de542`，2026-09-10）**都发生在 2026-05-15 之后** ⇒ 现行 Windows 发行核里仍是「跳过却不消费」的旧逻辑，用户侧的该崩溃依旧存在。**结论：原记录的 ✅ 只对 Linux 成立，对发行件不成立** |
-| **源码侧回归风险（已核对，低）** | 本修复对 `nucl_model≠5` 与旧码**完全等价**（旧码该分支本就无条件读那三行），故不影响论文口径与其它模板；`45de542` 只改 `coeff_make_dir`（建目录），Windows 分支逐字保留、无数值影响 |
-| **重编译后必做** | ① **删除用户态暂存运行时** `%LOCALAPPDATA%\scram_boxapp_mixing\runtime\windows`，否则 GUI 仍解析到旧 exe（devkit §14 同类坑）；② 跑 devkit §6 标准测试全套；③ 用 `docs/checktest/nucl_model5_test.cfg` 复跑，判据 = 跑通且初始总质量 `226.07444159907240`；④ 重生成安装包与开发包；⑤ 复测下方数值核查表 |
-| **构建前置缺口** | 当前 Windows 机器**无 Fortran 工具链**（gfortran/ifort/ifx/nvfortran/flang 与 cl/gcc/cmake 均未安装，`NETCDF_ROOT`/`CONDA_PREFIX` 未设置，conda base 亦无 gfortran 与 NetCDF-Fortran）。devkit README 构建段（第 373 行）明确「当前开发包没有把完整 Windows Fortran 编译链封装成一键脚本」，建议先备 MSYS2/MinGW-w64 |
-| **附带工具坑（套用其它补丁时）** | 本仓库 `core.autocrlf=true` 且工作树行尾混杂：`proposals/*.patch` 与 `ModuleCoeffRepartitionBoxmodel.f90`、`ModuleDiscretization.f90` 为 CRLF，而 `euler_coupled.f90`、`ModuleThermodynamics.f90` 为 LF ⇒ `git apply` 套 `bug7_double_add_v4.patch` 及 v1/v2/v3 会失败。加 `--ignore-whitespace` 后以上补丁均干净套用（已实测） |
+| **原判断（已作废）** | 2026-09-14 复核认为「修复做在内核里 ⇒ 必须重编译 Windows 核，否则用户侧崩溃依旧」。该判断的前提是"修复必须动内核" |
+| **更正后的结论** | 修复改在 py 侧后，**与内核二进制无关**：用户侧那个 2026-05-15 的 `ProgramSCRAM.exe` 本来就实现了 `if(nucl_model.ne.5)` 的原逻辑，py 侧生成 53 行 cfg 后它就能正常读 ⇒ **无需重编译、无需重发安装包** |
+| **反而要注意的反向风险** | 若保留 `7cc59c7` 的内核改动（无条件读）**同时**又做 py 侧条件化，则 nl=5 会在新位置再次崩（`diameter` 行被当 `init_bin_number` 读走）。两者**互斥，绝不能同时成立**。本次已回退内核，故工作区为"内核原样 + py 条件化"这一种组合 |
+| **仍然遗留的构建前置缺口** | Windows 机无 Fortran 工具链（原文记录属实）。但它只影响 **#18**（数值保真度复测）与将来的核心改动，**不再影响 #9** |
+| **附带工具坑（套用其它补丁时，仍然有效）** | 本仓库 `core.autocrlf=true` 且工作树行尾混杂：`proposals/*.patch` 与 `ModuleCoeffRepartitionBoxmodel.f90`、`ModuleDiscretization.f90` 为 CRLF，而 `euler_coupled.f90`、`ModuleThermodynamics.f90` 为 LF ⇒ `git apply` 套 `bug7_double_add_v4.patch` 及 v1/v2/v3 会失败。加 `--ignore-whitespace` 后以上补丁均干净套用（已实测） |
 
-#### 2026-09-14 Windows 标准测试数值核查（⚠️ 待重编译后复测）
+#### 既有工具其实早就照到过这次内核偏离
+
+`scripts/linux/config_roundtrip.py` 的 B 节会**按 `read(10,*)` 语句序列与本体 `/home/yifeihu/SCRAM1.1` 比对**。回退前它的输出是：
+
+```
+✓ 语句序列与本体一致（仓库含已知的 #9 改动（把条件读取改成无条件，语句本身相同））
+```
+
+即工具记录了偏离，但因为"语句条数相同"只作提示、未判失败。回退后恢复为干净的 `✓`（无 #9 标记）。**后续若要收紧：把这条提示升级为硬失败**（本体是条件读取时，仓库也必须条件读取）。
+
+
+#### 2026-09-14 Windows 标准测试数值核查（**归属 Bug #18**；⚠️ 待重编译后复测）
 
 背景：Windows 侧首次跑 devkit §6 全套标准测试，五项 smoke 全过（`import_smoke` / `gui_smoke` / `report_smoke` / `runtime_smoke` / `standard_tests`），报告 PDF 正常生成（LaTeX 可用）。**但标准测试只校验"跑通 / 数值有限 / status=ok"，不校验与基线的一致性**，故另行做了数值对照：
 
@@ -277,7 +507,7 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 
 ⇒ 剩余唯一解释：**同一份源码、同一份 cfg，2026-05-15 构建的 Windows 核与 2026-09 构建的 Linux 核跑出不同结果**（连自适应步数都不同）。对照案例 `coag_only` 逐位一致，说明核心逻辑未见损坏，全过程案例对构建差异敏感。两种可能**尚未区分**：① 纯构建/工具链差异（编译器与浮点参数不同）经自适应步长放大；② 5 月发行核与提交源码本就不一致。
 
-**待办与判据**：把本项与 `nucl_model=5` 修复放在**同一次** Windows 重编译里，然后复跑上表三例——若重编后与 Linux / 手册基线一致 ⇒ 判为旧核问题、本项关闭；若仍偏离 ⇒ 升级为移植保真度问题，按 **Bug #18** 的阈值口径（总质量逐位一致为硬判据、气溶胶质量相对差 ≤1e-5）与 Windows 规划 **W5** 的决策一并处置。
+**待办与判据**：本项已归属 **Bug #18**，与 #9 **无关** —— #9 的修复改在 py 侧（见上方 #9 章节），不需要重编译任何核心，故原"与 #9 放在同一次重编译里"的安排作废。跑一次 Windows 核心重编译后复跑上表三例——若重编后与 Linux / 手册基线一致 ⇒ 判为旧核问题、本项关闭；若仍偏离 ⇒ 按 **Bug #18** 的阈值口径（总质量逐位一致为硬判据、气溶胶质量相对差 ≤1e-5）与 Windows 规划 **W5** 的决策一并处置。
 
 > 旁证（因步数不同，不可直接比较）：`anomaly_flags.csv` 条目数 Windows EXT 1413 / INT 522，brief §2.2 记录的 Linux 基线为 EXT 1232 / INT 578。
 > 证据（本机 `install_logs/` 被 `.gitignore` 忽略、不入库）：`install_logs/auto/20260914-151550/standard_tests/`、`install_logs/auto/20260914-151726/quick_test/`（两处共约 415 MB）。
@@ -421,7 +651,7 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 | **成因** | `-g` vs `-O2 -ffp-contract=off` 的编译标志差异（非代码改动）⇒ 属"阈值/口径"问题、非移植缺陷。**注意：该归因目前是推断，尚未做"同一份源码、两种标志各编一次"的决定性实验** |
 | **历史遗漏** | 手工轮（runbook P4 / 台账条目 `fidelity · upstream_vs_devkit · megapole12h`）把 `1.4e-5` 记为 clean，但按 release-gate 阈值实际未达标 |
 | **证据** | `install_logs/auto/fidelity_check/20260913-082220/`、`install_logs/auto/fidelity_q26/`；台账条目 `Q-26 · fidelity_gate · upstream_vs_repo · contract` → bug |
-| **下一步** | 待人工三选一（**不得自行放宽阈值**）：a) 维持 1e-5 并给本体/仓库统一编译标志（重编译对齐）；b) 调整阈值并记录依据；c) 以"总质量逐位一致"为硬判据、气溶胶差为软信号（**推荐**）。另需在 Windows 重编译后复测（见 #9 的「2026-09-14 Windows 标准测试数值核查」表） |
+| **下一步** | 待人工三选一（**不得自行放宽阈值**）：a) 维持 1e-5 并给本体/仓库统一编译标志（重编译对齐）；b) 调整阈值并记录依据；c) 以"总质量逐位一致"为硬判据、气溶胶差为软信号（**推荐**）。另需在 Windows 重编译后复测（见本表上方的「2026-09-14 Windows 标准测试数值核查」，该节现归属 #18） |
 
 ### Bug #19: #11 的修复在 GUI 路径上失效（`explicit_keys` 被 `normalize()` 丢弃）
 
@@ -548,7 +778,7 @@ Zhu et al. (2015) 第 17 页 "Code availability":
 |---|---|---|---|
 | **#2** | ✅ **是** | 现象真实 | 零质量 + `with_coag=1` ⇒ `Nub Coag=0.0`（凝并一次未发生）。**对照组 `Nub Coag=-1.1069e14`、59 步**，证明仪器有效。性质（是否算缺陷）仍取决于"零质量是否合法输入" |
 | **#5** | ✅ 现象成立，⚠️ **描述不符** | **需更正描述** | `COAG_TARGET_NEAREST` → ok/2 步/`Nub Coag=0`；`LEGACY` → **failed/0 步/`SIGSEGV` 段错误**。原文"Legacy 会算速率、Prototype 跳过"**未被复现证实** |
-| **#9** | ✅ **是** | 现象真实 | Windows 核跑 56 行标准夹具：`Fortran runtime error: Bad real number in item 8 of list input`，0 步。与 2026-07 原始记录**逐字一致** ⇒ Windows 核确为修复前旧逻辑 |
+| **#9** | ✅ **是** | 现象真实，**归因已于 2026-09-20 更正** | Windows 核跑 56 行标准夹具：`Fortran runtime error: Bad real number in item 8 of list input`，0 步，与 2026-07 原始记录**逐字一致**。**但据此推断「Windows 核为修复前旧逻辑」方向错了**：Windows 核用的是**本体原逻辑**（`if(nucl_model.ne.5)` 条件读取，与 `/home/yifeihu/SCRAM1.1` 的读取语句序列一致），而这份 56 行夹具本身就不符合内核契约 ⇒ 缺陷在 py 写入器，不在内核。详见上方 **Bug #9** 章节 |
 | **#13** | ✅ **是，数值逐位吻合** | 现象真实 | INT `final_number=4.12452e9` / EXT `final_number=0` —— 与台账记录的 `4.12452e9` / `0.0` **完全一致** |
 | **#17** | ✅ 机制确认 | 已计入（`upstream`），但**当时漏收入致作者文档** | 排放窗口写在 `ModuleDiscretization.f90:1194-1198` 的 `if(nucl_model.eq.5)` 分支里 ⇒ **与 #9 共用同一个开关** |
 
@@ -571,7 +801,7 @@ Zhu et al. (2015) 第 17 页 "Code availability":
     endif
 ```
 
-**同一个 `nucl_model` 开关同时控制两件事**：读配置的指针逻辑（#9）与排放窗口（#17）。
+**同一个 `nucl_model` 开关同时控制两件事**：cfg 里那三行的读/不读（#9 —— 内核侧是正确约定，缺陷在 py 写入器）与排放窗口（#17）。
 更值得注意的是**同一常数还出现在另外两处且互相矛盾**：
 
 | 位置 | 表达式 | 是否随 `nucl_model` 变 |
