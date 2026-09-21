@@ -3,7 +3,7 @@
 > **自主修复授权（2026-09-12）**：配置/契约层缺陷（base cfg、模板默认值、死控件、字段未落到核心）授权 agent 自主修复，路径限 app/**、examples/**、core/templates/**、core/defaults/**、scripts/linux/**、proposals/**、docs/checktest/**；每笔须附"数值影响证明 + 模板/契约体检输出 + 基线声明"三件套，并**先在本表登记**。物理口径/界面控件/发布资产/runtime-windows 源码仍须人工拍板（见 runbook §1）。
 > **标签（2026-09-12 复核新增）**：每条另标 `port`（移植层，该修、计入闸门）/ `upstream`（本体固有，只记录、不计入闸门）/ `needs-domain`（需领域判断）。当前：upstream = #7、#2/#5、#14；needs-domain = #13；其余为 port。
 > **结论三分类（2026-09-12 复核新增）**：`confirmed-bug`（有夹具+判据）/ `evidence-only`（证据已列、待人工定性）/ `unexplained`（如 Q-06 的 RH 跳变，不得以 clean 结案）。
-> 创建日期: 2026-07-23 | 最后更新: 2026-09-20 | 本轮：**#9 归因更正 + 修复方向反转**（原记为内核「跳过却不消费」缺陷并改了 `ModuleDiscretization.f90`；实为 Python 写入器未复刻内核契约 ⇒ 现回退内核改动、只改 py 侧，**Windows 发行核无需重编译**）；此前 #19–#27（界面契约层体检：`explicit_keys` 丢失、`tag_thrm`/`dtmin` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
+> 创建日期: 2026-07-23 | 最后更新: **2026-09-21** | 本轮：**nl=5 初始化口径专项审查**（补齐 #28 因果链；新登记 **#29**＝nl=5 多列分支重复投放；两个历史基线数字作废；撤回一条误判。完整报告 `docs/nl5与bug28审查_20260921.md`）——上一轮：**#9 归因更正 + 修复方向反转**（原记为内核「跳过却不消费」缺陷并改了 `ModuleDiscretization.f90`；实为 Python 写入器未复刻内核契约 ⇒ 现回退内核改动、只改 py 侧，**Windows 发行核无需重编译**）；此前 #19–#27（界面契约层体检：`explicit_keys` 丢失、`tag_thrm`/`dtmin` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
 >
 > **标签体系待修改（2026-09-14 建议）**：现行 `upstream` 标签把三类性质完全不同的东西混在一起，建议拆为 `upstream-defect`（真实现错误，如 #7 → 需动核心）、`undefined-domain`（模型未定义域，如 #2/#5/#13 → 收权限即可消掉，不需要改核心）、`by-design`（有意为之，如 #14/#17 → 什么都不用做）。理由见 #19–#24 登记说明。
 > **2026-09-20 追加第四类 `port-defect`（移植契约缺陷）**：#9 原被归入 `upstream-defect` 并据此改了内核，实为**移植方未复刻内核约定** ⇒ 内核不该动，只需改 py 侧。判据（可复用）：**本体源码 `/home/yifeihu/SCRAM1.1` 的读取语句序列与仓库内核一致 ⇒ 缺陷必在移植侧**；`scripts/linux/config_roundtrip.py` 的 B 节已在自动比对这条。
@@ -179,6 +179,82 @@
 
 ---
 
+## 2026-09-21：nl=5 初始化口径专项审查（#28 因果链补齐 + 新登记 #29）
+
+> 完整报告：**`docs/nl5与bug28审查_20260921.md`**（含逐格实测数据、复现命令、给作者的问题清单）。
+> 本次审查**未修改任何代码**；只读核查 + 登记。
+
+### 1. 内核状态复核：Windows 侧仍是 1.1 构建
+
+| 二进制 | md5 | mtime | 结论 |
+|---|---|---|---|
+| `runtime/windows/ProgramSCRAM.exe` | `aeaf4a5e…` | 2026-09-10（目录重排时的搬动 mtime） | ❌ **1.1 构建**。字符串扫描：`SCRAM1.2` / `SCRAM_REDISTRIBUTION_MODE` / `moving_center_dualpivot` / `orphan mass` **全部 0 命中**；1.1 时代的 `COAG_TARGET_NEAREST` / `SCRAM_COEFF_REPARTITION_MODE` 命中 |
+| `runtime/linux/ProgramSCRAM` | `a60700a9…` | **2026-09-20 16:14:40** | ✅ 与 1.2 源码一致 |
+| `~/.local/state/scram_boxapp_mixing/runtime/linux/ProgramSCRAM`（本轮实测所用） | `a60700a9…` | 同上 | ✅ 用户态暂存副本，与上一行**逐字节相同** |
+
+- 1.2 相对 1.1 多了 **3 个 `.f90`**（`ModuleCoagulationNearest12` / `ModuleConservativeRemap12` / `ModuleCondSurrIO`；SRC 文件数 **17 vs 14**）⇒ Windows exe 不重编译，用户侧连"1.2 新重分布内核"和"1.2 新体检"都用不到。**这已不只是 #18 的保真度问题**。
+- Linux 核的来历（git）：`b3cf6f7`（2026-06-01 初版）**只有 Windows 运行时**；`45de542`（2026-09-10）提交信息为"新增 Linux 原生运行时：从源码构建核心并在 Linux 上运行模型"⇒ 由本移植方新增；`7cc59c7`、`0cbac3c` 各重建一次。改 Fortran 后必须重建（#9 的教训）。
+
+### 2. #28 因果链补齐
+
+**触发三件套（缺一不可）**：`nucl_model=5` **且** `tag_external=0` **且** `N_frac>1`。
+
+对 nl=5，`init_bin_number` 全核**只有 `:675` 一处消费**，且它在块 `:669-679`（该块位于 `if/else nucl_model` **之外**——`:668` 才是那个 `endif`）。
+
+**时序**：① `:131` `allocate`（**未清零**；紧邻的 `init_bin_emission` 有 `=0.d0`）→ ② `:145` 读取被 `if(nucl_model.ne.5)` 跳过（数组保持垃圾）→ ③ `:458` 算内置 Hazy（`mass_init`/`number_init`）→ ④ `:584-596` 块②写好初值（此时质量与粒子数都正确）→ ⑤ **`:675` 用 A（垃圾）覆盖第 1 列的粒子数** ← 缺陷诞生点 → ⑥ 组成重分布搬运 → ⑦ 首次尺寸重分布前体检 ⇒ `error stop`。
+
+**"不守恒"的确切含义**：1.2 新内核（`MOVING_CENTER_DUALPIVOT`）**用两套权重同时守数量与质量**（`:3-4` "never reconstruct number from mass"、`:154-156` `V_lo/N_lo = pivot_volume(lo)`），孤儿格子让两个守恒量只能保一个 ⇒ 宁可提前拒绝。1.1 无此不变量 ⇒ 静默算错（"跑得通、数字不可信"的由来）。
+
+**判据是成对看的**：`(0,0)` 空格子正常；`(>0,0)` 孤儿 → STOP；`(0,>0)` 幽灵 → STOP。所以"不允许 0"是误解，禁止的是**不配套**。
+
+**`tag_external=1` 不是另一个缺陷**：它使块 `:669`、`:681` 都不执行 ⇒ A **从未被读** ⇒ 无后果。但属**潜在隐患**（未被清初始化的数组仍在），建议作者顺手清零或填 `number_init(k)`。同类隐患：`kind_composition=2–9` 时 `frac_bound` 已 allocate 未赋值（#24 附注）。
+
+### 3. 【新登记 #29】nl=5 多列分支重复投放（外混臂初值虚高 6×/18×）
+
+见上方 Bug 总览第 29 行。要点：
+
+- **位置** `SRC/ModuleDiscretization.f90:584-596`（nl=5 的 `else !external mixing`）。
+- **机制** 两条判定不对称：硫酸盐用"第 1 族**上限**=1"（唯一命中 1 列）；黑碳用"第 1 族**下限**=0"（命中 **11 列**；`n_frac=5` 时 **35 列**）⇒ 同一份 `mass_init(k)/2` 写 12/36 份，随后被"组成相同即累加"的组成重分布合并成 1 格（值放大 11/35 倍）。
+- **推断**：作者本意应是"每档两列：纯硫酸盐 + 纯黑碳"（`N_frac=1` 时退化为内混），黑碳那条判定偷懒写成"第 1 族下限=0"。
+- **与 #28 的关系**：同一段代码里的**两个独立缺陷**——加模式分岔只修 #28（STOP 消失），**质量与总量一分不变**。
+- **实测**（`gmd_hazy_condensation`，nl=5，12 h）：初值 SO4 两臂相同 `18.8395368`；BC `18.8395368` vs `207.2349048`（**11.00×**）；总量 `37.679073599845388` vs `226.07444159907240`（**6.0000×**）；终态粒子数比 **6.0000**（模板未开凝并 ⇒ 差异全部来自初值）；`Mass Cond` 3.1231764329 vs 1.1228773009（**此差异不可解释为"内混 vs 外混"**）。
+
+### 4. 两个"历史基线"数字作废
+
+| 记录值 | 今天的解释 |
+|---|---|
+| `226.07444159907240` | = `12 × Σ mass_init/2`（纯重复投放产物；`tag_external=1` 臂实测） |
+| `228.81807486240999` | = `226.07444159907240 − 18.839536799922694（被块④覆盖掉的 1 份） + 21.583170063260344（cfg 的 30 物种总量）`，与记录值相对差 3.5e-16（`tag_external=0` 臂实测） |
+
+⇒ 二者**都不是 hazy 场景的物理初值**，不得再作基线引用；手册/报告/本表历史行需标注或重算。
+
+### 5. 连带发现（新增/更正）
+
+- **nl=5 与物种布局强耦合**：初值/排放钉死在编译期槽位 `EBC=2 / ESO4=4`（`INC/pointer.inc`）⇒ 只在含槽位 4 的 30 物种布局下成立。2 物种布局实测：`exit=0`、**不报错**，但初始总质量只剩一半、**`Mass Cond = 0`**（与 Q-18 同源）。
+- **nl=5 初值幅值也随物种表变**：`fixed_density` 由物种表 `per_mass_init` 加权算出 ⇒ 同一 hazy 场景在 2 物种布局为 57.537、30 物种布局为 37.679。
+- **`SCRAM_REDISTRIBUTION_MODE` 全 app 从不设置** ⇒ 产品路径永远走 1.2 新内核；`redistribution_method` 在默认下 **2–9 逐位相同**（GUI 0–9 大多为死值，与 #12/#15/#20/#24 同批）。
+- **`RESULT/result_inter.bin` 的 `inti` = internal（内部混合）而非 initial**；由 `ModuleResultoutput.f90:125-129` 写出（`j, jesp, concentration_inti`，行数 = `N_size × N_inside_aer(=21)`），产品侧不读它。
+- **【更正】** 撤回"内混臂 `mass_init(j)` 越界读"的说法：`N_frac=1 ⇒ N_fracmax=1 ⇒ N_size=N_sizebin=7`，**不越界**（`:650` 注释同此）。实测佐证：内混臂 `inital total mass = 37.679073599845388` 与独立复算逐位一致，`result_mass.bin` 只有 217 行 = 7×31。
+- **nl=5 初值独立验证通过**：按 `dist_init_mass_number` 公式独立复算（100 点/档积分），7 档 `mass_init`/`number_init` 与内核相对差 ~1e-10（打印精度量级）；总量 37.6790735998454（质量）/ 6.140334422e9（数量，= 6140 个/cm³）；平均直径 ≈ 0.215 µm；质量小于全积分 47.73 是因为粒径档只到 10 µm（粗模态尾巴被截断）。
+
+### 6. 给作者的问题清单（待回函）
+
+1. **nl=5 是否只支持 `n_frac=1`？** 若是 ⇒ `n_frac>1` 应显式报错；若否 ⇒ 请给出"多列时两种物质摆哪几列"的约定。
+2. **`:592` 为何用"第 1 族下限=0"而非"第 4 族（BC）上限=1"？**（前者命中 11/35 列，后者唯一命中）
+3. **`:669-679` 缺模式分岔**：请选 a) 该块对 nl=5 跳过；b) 按模式取 `number_init(k)`。
+4. **能否给 nl=5 下不用的 `init_bin_number` 显式清零？**（同类：`frac_bound`）
+5. **两处耦合提醒**：初值幅值经 `fixed_density` 依赖物种表；初值/排放钉死槽位 2/4。
+
+### 7. 本轮遗留待办（2026-09-21 更新）
+
+- [ ] 与作者讨论上述 5 问（尤其"nl=5 是否支持多列"）
+- [ ] 产品侧：两个 hazy 模板**外混臂拦截/告警** + 相关数字**作废标注**
+- [x] 本次证据已转存 `install_logs/nl5_20260921/`（188 KB / 15 个文件）；`/tmp` 下的临时产物已清理（2026-09-21）
+- [ ] 读上游发布包 `cesm-scram-optics-20260915-r2`（作者 `/data/users/wangfangyuan/model/` 下有正式副本）中的 `source/scram/doc/OPTICS_INTEGRATION_HANDOFF_20260915.md` 与 `test_scram_orphan_population.py`：CESM 侧已有 `SCRAM_ORPHAN_MASS_CLEAN` 语义（孤儿质量清理而非报错），可能直接回答"nl=5 外混怎么处置孤儿格子"
+- [ ] 沿用上轮遗留：Windows 核重编译、1.2 基线重采、`docs/` 中 1.1 口径数字标注
+
+---
+
 ## 一页看懂（说人话）
 
 > 给不熟悉内部术语的读者。逐条的精确证据、判据与代码位置见下方「修复状态」与「详细信息」两节。
@@ -259,6 +335,7 @@
 | 26 | 🟠 P1 | 运行/对比功能 | ❌ 未修（2026-09-14 新发现） | **界面「比较 internal / external」在两臂上同时改了「表示能力」和「初始态」**：`_with_mixing_assumption` 的 INTERNAL 分支把 `tag_external` 强制为 0（`run_service.py:336`），而 EXTERNAL 分支**保留原值**（`:349`）。实测同一份配置做两臂变换：**出厂模板**（`tag_external=0`）→ 两臂只差 `n_frac`(1↔3) 与 `fraction_bounds`，对比干净；**用户载入的配置**（如 `zero_initial_mass_test.cfg`，`tag_external=1`）→ 两臂差 **3 项**：`n_frac`(1↔3)、**`tag_external`(0↔1)**、`fraction_bounds`。⇒ 后者的结果差异**不能只归因于内混/外混表示能力**，初始态也变了。附带：用户在结构编辑页设的 `n_frac` 与 fraction 表在两臂中都被静默改写（与 #23 同类）；比较运行只归档一份 `experiment_config.cfg`，而两臂各跑一份不同的 cfg（#22 的对比场景特例）。**2026-09-14 补充（自我更正）**：实测 `tag_init` **两臂始终相同**（按钮从不碰它）；且「内混臂强制 `tag_external=0`」**很可能不可避免** —— `n_frac=1` 时组成只有 1 段，「初始外混」在语义上无处安放；核心也正是这样用的（`ModuleDiscretization.f90:656` 专门处理 `tag_external=0 .and. N_frac.gt.1` 这一组合）⇒ **「是否算缺陷」需重新定性**，真正站得住的问题也许只是「界面没告诉用户两臂差异里包含初始态」 |
 | 27 | 🟠 P1 | 运行/健壮性 | ❌ 未修（2026-09-14 新发现） | **案例名含非 ASCII 字符时，结果 CSV 的编码不一致会让程序崩溃**：核心自带的结果写出（`SRC/ModuleCoeffRepartitionBoxmodel.f90:223`/`:1405` 写 `csv/timestep_summary.csv`，其中的 `testcase`/`process_combo` 取自环境变量 `SCRAM_TESTCASE`/`SCRAM_PROCESS_COMBO`）在 Windows 上按 **ANSI 码页（GBK）** 落盘，而 `run_service.summarize_run`（`:221`）用 `timestep_path.open()` **按 UTF-8** 读回 ⇒ `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc1 in position 289` 崩溃。**实测**：案例名传 `"零质量 + NEAREST"` → 崩溃；换 ASCII 标签 → 正常。**触发面**：GUI 默认流程的 `case_name` 取自案例预设（ASCII），故当前不会踩到；但任何把非 ASCII 作为 `case_name` 传入 `prepare_run` 的调用（如我们的探测脚本）都会崩。**另一层隐患**：路径本身也会含中文（结果目录用「实验名_案例预设」命名），核心能否打开中文路径未验证 |
 | 28 | 🔴 P1 | 初始化（**上游设计洞**） | ❌ 未修（2026-09-20 升级 1.2 时发现） | **`nucl_model=5` 时内核消费从未初始化的 `init_bin_number`**（详见上方 2026-09-20 章节 §4）：消费点 `ModuleDiscretization.f90:668-678`（**1.1 就有**），而 `:131` 只 `allocate`、`:145` 的读取被 `if(nucl_model.ne.5)` 跳过 ⇒ 读未初始化内存；1.2 在 `ModuleRedistribution.f90:127-136` 新增的不变量把它暴露为 `error stop 'SCRAM1.2: orphan mass/number before remap'`。实测触发点 `f=1, k=7`：有完整 30 物种质量 `1.2603962185956201` 而 `number=0`。**含义：1.1 时代这两个模板外混臂的数值建立在未初始化内存上，不可信** |
+| 29 | 🔴 P1 | 初始化（**上游缺陷**） | ❌ 未修（2026-09-21 新发现） | **nl=5 多列分支重复投放**（详见下方 2026-09-21 章节 §3）：`ModuleDiscretization.f90:584-596` 两个判定条件不对称——`comp(k,f,1,2)==1`（硫酸盐）命中 **1 列**，`comp(k,f,1,1)==0`（黑碳）命中 **11 列**（`n_frac=5` 时 35 列）⇒ 同一份 `mass_init(k)/2` 被写 12/36 份，组成重分布再按"组成相同"累加合并。实测：内混臂 `37.679073599845388` vs 外混臂 `226.07444159907240`（= 12 × Σmass_init/2，**6 倍**）、`n_frac=5` 时 `678.22332479721695`（**18 倍**）；两臂终态粒子数比 **6.0000**（本模板未开凝并 ⇒ 差异全部来自初值）。**含义：外混臂初值不是"论文 hazy 场景"（硫酸盐:黑碳 = 1:1 vs 1:11），其数字一律作废** |
 
 ## Bug 总览
 
@@ -291,7 +368,8 @@
 | 25 | 🟠 P1 | 运行/配置 | `dtmin`（最小时间步）死标签：核心读了不用；注释承诺的步长上下限从未实现 | 改「最小时间步」后运行（任何值都无效） | `app/views/main_window.py`（移除控件）；若要生效需在 `SRC/ModuleAdaptstep.f90:adaptime` 补钳制（改核心 + 重编译） | 待人工：a 移除控件 / b 核心补 DTMIN/DTMAX 钳制 |
 | 26 | 🟠 P1 | 运行/对比功能 | 内外混对比在 `tag_external=1` 的配置上被混淆（两臂同时改表示能力与初始态） | 载入 `tag_external=1` 的 cfg 后点「比较 internal / external」 | `app/services/run_service.py`（`_with_mixing_assumption`） | 待人工：a 对比时把 `tag_external` 固定在两臂一致 / b 在界面标注该混淆 |
 | 27 | 🟠 P1 | 运行/健壮性 | 案例名含中文时结果 CSV 编码不一致（核心按 GBK 写、Python 按 UTF-8 读）→ 崩溃 | `prepare_run` 的 `case_name` 含非 ASCII 字符 | `app/services/run_service.py`（读写编码）；核心侧见 `ModuleCoeffRepartitionBoxmodel.f90:223` | `fix: 读写 CSV 统一显式 encoding="utf-8"（或 errors="replace"），核心侧另行提案` |
-| 28 | 🔴 P1 | 初始化（上游设计洞） | `nucl_model=5` 时内核消费从未初始化的 `init_bin_number`（1.2 新检查暴露为 `orphan mass/number before remap` 硬 STOP） | `nucl_model=5` **且** `tag_external=0` **且** `N_frac>1`（两个 hazy 模板的外混臂） | 消费点 `SRC/ModuleDiscretization.f90:668-678`（1.1 就有）；暴露点 `SRC/ModuleRedistribution.f90:127-136`（1.2 新增） | 待作者定性：a) 该分支在 nl=5 时改用 `number_init(k)`；b) 或把 nl=5 的 cfg 契约改为"必须带 `init_bin_number`"。**不要**改回 `:145` 的条件读（会破坏作者约定，也是 #9 刚回退的方向） |
+| 28 | 🔴 P1 | 初始化（上游设计洞） | `nucl_model=5` 时内核消费从未初始化的 `init_bin_number`（1.2 新检查暴露为 `orphan mass/number before remap` 硬 STOP） | `nucl_model=5` **且** `tag_external=0` **且** `N_frac>1`（两个 hazy 模板的外混臂） | 消费点 `SRC/ModuleDiscretization.f90:669-679` 的 `:675`（块内**唯一**在 nl=5 下仍执行的读取点；`:619/:641/:664` 都在 `else nucl_model.NE.5` 里）；暴露点 `SRC/ModuleRedistribution.f90:127-136`（1.2 新增） | 待作者定性：a) 该块对 nl=5 跳过（推荐）；b) 该处按模式取 `number_init(k)`；c) 或把 nl=5 的 cfg 契约改为"必须带 `init_bin_number`"。**不要**改回 `:145` 的条件读（会破坏作者约定，也是 #9 刚回退的方向） |
+| 29 | 🔴 P1 | 初始化（上游缺陷） | nl=5 多列初始化分支**重复投放**同一份初值（黑碳判定命中 11/35 列）⇒ 外混臂初值总量 = 内混臂的 **6 倍 / 18 倍** | `nucl_model=5` **且** `N_frac>1`（与 `tag_external` 无关） | `SRC/ModuleDiscretization.f90:584-596`（黑碳判定用"第 1 族下限=0"，而硫酸盐用"第 1 族上限=1"） | 待作者定性：a) 块 `:669-679` 对 nl=5 不执行；b) 黑碳判定改"第 4 族（BC）上限=1"（唯一命中 f=3）；c) 明确 nl=5 只支持 `n_frac=1` 并显式拒绝多列 |
 
 ### 实测模板对照表（base="teaching"，非零初始质量，2026-07-27）
 
