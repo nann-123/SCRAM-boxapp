@@ -4,6 +4,7 @@ import argparse
 import math
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -122,6 +123,33 @@ def run_runtime_smoke(output_root: Path, template_name: str, case_name: str, ski
     print(f"runtime_smoke: ok ({template_name} / {case_name})")
 
 
+def run_core_version_probe(require_1_2: bool) -> None:
+    """内核版本自检（2026-09-23 新增）。
+
+    背景：源码树已是 SCRAM1.2，但 Windows 侧被跟踪的发行 exe 可能仍是 2026-05-15 的 1.1 构建
+    （详见 scripts/check_runtime_version.py 的模块文档）。
+
+    默认只告警、不失败：Windows 侧重编译是已登记待办，此时把它当硬失败会让标准测试跑不了。
+    发布前请加 --require-core-1.2，让它成为硬闸门。
+    """
+    probe = ROOT / "scripts" / "check_runtime_version.py"
+    completed = subprocess.run([sys.executable, str(probe)], check=False)
+    if completed.returncode == 0:
+        print("core_version: ok (SCRAM1.2)")
+        return
+    if completed.returncode == 3:
+        message = ("core_version: 运行时的 ProgramSCRAM 不是 SCRAM1.2 构建（旧核）"
+                   "—— 见 docs/0923修改.md 第 1 节")
+        if require_1_2:
+            raise AssertionError(message)
+        print(f"WARN: {message}（用 --require-core-1.2 可把它变成失败）")
+        return
+    raise AssertionError(
+        f"core_version: 自检脚本未能给出结论（退出码 {completed.returncode}）—— "
+        "直接运行 `python scripts/check_runtime_version.py` 看具体报错"
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run SCRAM BoxApp standard smoke tests.")
     parser.add_argument("--template", default="gmd_paris_coagulation", help="TemplateService template id to load")
@@ -129,8 +157,11 @@ def main() -> int:
     parser.add_argument("--output-root", type=Path, default=ROOT / "install_logs" / "standard_tests")
     parser.add_argument("--skip-gui", action="store_true", help="Skip offscreen GUI construction")
     parser.add_argument("--skip-report", action="store_true", help="Skip report generation even if TeX is available")
+    parser.add_argument("--require-core-1.2", dest="require_core_12", action="store_true",
+                        help="Fail if the runtime ProgramSCRAM is not a SCRAM1.2 build (release gate)")
     args = parser.parse_args()
 
+    run_core_version_probe(args.require_core_12)
     run_import_smoke()
     if not args.skip_gui:
         run_gui_smoke()

@@ -19,17 +19,17 @@
     {"key": "with_coag", "fortran_name": "with_coag", "line_index": 1, "type": "bool_int",
      "widget": "checkbox", "modes": ["basic"], "label_key": "with_coag",
      "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
-     "known_defect": "#19", "note": "运行前会被 case_preset 覆盖（#19：explicit_keys 被 normalize 丢弃）"},
+     "known_defect": null, "note": "#19 已修（2026-09-23）：normalize 保留 explicit_keys ⇒ 用户改过的开关不再被预设覆盖；未改动时仍按预设跑"},
 
     {"key": "with_cond", "fortran_name": "with_cond", "line_index": 2, "type": "bool_int",
      "widget": "checkbox", "modes": ["basic"], "label_key": "with_cond",
      "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
-     "known_defect": "#19", "note": "同上"},
+     "known_defect": null, "note": "同上"},
 
     {"key": "with_nucl", "fortran_name": "with_nucl", "line_index": 3, "subindex": 0, "type": "bool_int",
      "widget": "checkbox", "modes": ["basic"], "label_key": "with_nucl",
      "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
-     "known_defect": "#19", "note": "同上"},
+     "known_defect": null, "note": "同上"},
 
     {"key": "nucl_model", "fortran_name": "nucl_model", "line_index": 3, "subindex": 1, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "nucl_model",
@@ -41,54 +41,56 @@
 
     {"key": "sulfate_computation", "fortran_name": "sulfate_computation", "line_index": 4, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "sulfate_computation",
-     "range": [0, 9], "valid_values": [0, 1],
+     "range": [0, 1], "valid_values": [0, 1],
      "requires": {"with_cond": 1},
      "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "danger": {"kind": "treated_as_other", "zh": "非 0 的值一律按「显式方法」处理"},
-     "note": "0=normal / 1=explicit"},
+     "danger": {"kind": "silent_skip", "zh": "填 2–9 时核心的 `eq.0` 与 `eq.1` 两个分支都不进，硫酸冷凝那几段会被静默跳过（不是「按显式方法处理」——旧版登记表此描述有误，2026-09-23 已更正）"},
+     "note": "0 = normal（由批量平衡处理）/ 1 = explicit（调 SULFDYN）。2026-09-23 控件范围由 0–9 收窄为 0–1"},
 
     {"key": "dynamic_solver", "fortran_name": "dynamic_solver", "line_index": 5, "subindex": 0, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "dynamic_solver",
-     "range": [0, 9], "valid_values": [0, 1, 2],
+     "range": [0, 2], "valid_values": [0, 1, 2],
      "requires": {"any": [{"with_cond": 1}, {"with_nucl": 1}]},
      "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "danger": {"kind": "hang", "zh": "填 3-9 会让核心死循环挂住（已实测：60s 未退出、无任何 Progress 输出，只能强杀）"},
-     "known_defect": "#24",
-     "note": "0=euler / 1=ETR / 2=ROS2"},
+     "danger": {"kind": "hang", "zh": "填 3–9 会让核心死循环挂住（已实测：60s 未退出、无任何 Progress 输出，只能强杀）—— 控件已收窄为 0–2，且 validate() 还有一道运行前闸门"},
+     "known_defect": null,
+     "note": "0 = euler / 1 = ETR / 2 = ROS2。**2026-09-23 已处理 Bug #24**：控件范围 0–9 收窄为 0–2，标签改为「时间积分求解器」（原名「动力学求解器」易被误读为与 RDB 有关），并加了说明 tooltip"},
 
     {"key": "tag_thrm", "fortran_name": "tag_thrm", "line_index": 5, "subindex": 1, "type": "int",
-     "widget": "spin", "modes": ["advanced"], "label_key": "tag_thrm",
+     "widget": null, "modes": ["none"], "label_key": null,
+     "widget_null_reason": "2026-09-23 已移除控件（Bug #20）：核心读了从不使用，界面留着只会误导",
      "range": [0, 9], "valid_values": [],
      "core_reads": true, "core_uses": false, "rewritten_by": [],
      "known_defect": "#20",
      "declared_at": "SRC/ModuleInitialization.f90:55",
      "declaration_comment": "method for wet diameter computation 0 h2o 1 isorropia",
-     "note": "死标签：全核心 2 处命中 —— ModuleInitialization.f90:55 的声明、ModuleDiscretization.f90:89 的读取，**0 处使用**。声明处的注释显示作者本意是让它选「湿直径计算方法」（0=h2o / 1=isorropia），但选择逻辑从未接上"},
+     "note": "死标签：全核心仅 2 处命中 —— ModuleInitialization.f90:55 的声明、ModuleDiscretization.f90:104 的读取，**0 处使用**。**作者原始树（E:/yifeihu/research/models/scram-v1.1/scram-1.1/SCRAM1.1）同样如此：声明+读取、无使用** ⇒ 不是移植丢失（该树里也没有 time.inc）。声明处注释显示作者本意是让它选「湿直径计算方法」（0=h2o / 1=isorropia），但选择逻辑从未写入代码。值仍会从模板/cfg 带出并写回 cfg"},
 
     {"key": "redistribution_method", "fortran_name": "redistribution_method", "line_index": 6, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "redistribution_method",
-     "range": [0, 9], "valid_values": [2, 3, 4, 5, 6],
+     "range": [0, 6], "valid_values": [2, 3, 4, 5, 6],
      "requires": {"with_cond": 1},
      "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "danger": {"kind": "known_upstream", "zh": "6=euler_coupled 本体已知数量不守恒（#7）；3/5 会让粒子数按方法定义大幅变化（#14，设计使然）；7-9 命中 CASE DEFAULT 静默不做重分配"},
-     "note": "2=Moving Diameter（论文口径，产品默认）"},
+     "danger": {"kind": "known_upstream", "zh": "6=euler_coupled 本体已知数量不守恒（#7）；3/5 会让粒子数按方法定义大幅变化（#14，设计使然）。注意：默认内核下 2–6 逐位相同，上述旧语义只在把「重分布内核」切到 legacy 时才生效"},
+     "note": "0/1 = 完全跳过尺寸重分布（`ProgramSCRAM.f90:139` 判 `ge.2`）；≥2 默认一律走 1.2 新内核。2026-09-23 控件范围由 0–9 收窄为 0–6，标签由「RDB 数值方法」改为「粒径重分布方法」"},
 
     {"key": "redistribution_option", "fortran_name": null, "line_index": "runtime_env", "type": "enum",
      "widget": "combo", "modes": ["advanced"], "label_key": "redistribution_option",
-     "valid_values": ["legacy", "core_conserv", "core_nogrow", "core_smallgrow"],
+     "valid_values": ["moving_center_dualpivot", "legacy"],
      "requires": {"with_cond": 1},
      "in_cfg": false,
-     "core_reads": false, "core_uses": false, "rewritten_by": ["normalize"],
-     "known_defect": "#12",
-     "note": "死控件：只走环境变量 SCRAM_RDB_CORE_CONSERV(_NAME)，核心不读任何 RDB 相关环境变量，cfg 里也无此字段"},
+     "read_via": "env:SCRAM_REDISTRIBUTION_MODE",
+     "core_reads": true, "core_uses": true, "rewritten_by": ["normalize"],
+     "known_defect": null,
+     "note": "**2026-09-23 改造（原 Bug #12 已消）**：不再走核心不读的 SCRAM_RDB_CORE_CONSERV，改传核心真会读的 **SCRAM_REDISTRIBUTION_MODE**（SCRAM1.2 新增，见 ModuleDiscretization.f90 开头的 read_discretization）。取值只有 moving_center_dualpivot / legacy，其它值核心会 error stop"},
 
     {"key": "init_scenario", "fortran_name": "init_scenario", "line_index": 7, "type": "int",
      "widget": "combo", "modes": ["basic"], "label_key": "init_scenario",
      "valid_values": [1, 2, 3],
      "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "gated_by": {"field": "tag_init", "value": 0, "zh": "只有 tag_init=0 时才真正影响初值；出厂配置 tag_init=1，所以选哪个都一样"},
+     "gated_by": {"field": "tag_init", "value": 0, "zh": "三层门槛：① 只有 tag_init=0（用内置三套场景分布自动算初值）时才参与数值；出厂模板都是 tag_init=1，所以选哪个都一样；② nucl_model=5 会优先走硬编码分支（ModuleDiscretization:462 的 if 顺序），此时本项也无效果；③ 改组分比例的那一段（:487-523）还额外要求 tagrho=1"},
      "known_defect": "#16",
-     "note": "1=霾天 Hazy / 2=城市 Urban / 3=清洁 Clear"},
+     "note": "1=霾天 Hazy / 2=城市 Urban / 3=清洁 Clear。核心真会用它：① ModuleDiscretization:833-855 在 dist_init_mass_number 里按场景选三模态对数正态参数（真正的初值分布）；② :487-523 在 tag_init=0 且 tagrho=1 时改 speciesfrac。另有 2 处只是打印（:177 与 :704 写进 RESULT/report.txt）"},
 
     {"key": "tag_external", "fortran_name": "tag_external", "line_index": 8, "type": "int",
      "widget": "checkbox", "modes": ["basic"], "label_key": "tag_external",
@@ -122,7 +124,7 @@
     {"key": "final_time_hours", "fortran_name": "final_time", "line_index": 13, "type": "float",
      "widget": "double_spin", "modes": ["basic"], "label_key": "simulation_time",
      "range": [0.01, 240.0], "core_reads": true, "core_uses": true, "rewritten_by": ["case_preset"],
-     "known_defect": "#19", "note": "运行前会被 case_preset 覆盖（#19）"},
+     "known_defect": null, "note": "#19 已修（2026-09-23）：用户改过时长则不被预设覆盖"},
 
     {"key": "dtmin_seconds", "fortran_name": "dtmin", "line_index": 14, "type": "float",
      "widget": "double_spin", "modes": ["basic"], "label_key": "dtmin_seconds",
@@ -134,7 +136,7 @@
     {"key": "cut_dim", "fortran_name": "Cut_dim", "line_index": 15, "type": "float",
      "widget": "double_spin", "modes": ["advanced"], "label_key": "cut_dim",
      "range": [0.0, 100.0], "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "note": "原 cfg 注释写的是 Tag_eqilibirum，但核心实际读进 Cut_dim；Tag_equi 变量声明后从未使用"},
+     "note": "真正的含义是「平衡/动态分界粒径」（µm）：小于它的粒径段在上每步后额外做一次无机盐批量平衡（bulkequi_inorg），大于它的只走动态求解。核心把直径换算成 ICUT（ModuleDiscretization:251-253 找所在粒径段）；若 ≤ 最小粒径边界则 ICUT=0 即不做。⚠️ 出厂模板填 0（=不做无机平衡），改成 >0.001 会开启一条出厂没跑的路径，结果会变。⚠️ cfg 里的注释 `##Tag_eqilibirium` 是误写：`Tag_equi` 变量声明后从未使用。2026-09-23 标签由「切分粒径」改为「平衡/动态分界粒径 (µm)」并加 tooltip"},
 
     {"key": "n_sizebin", "fortran_name": "N_sizebin", "line_index": 16, "subindex": 0, "type": "int",
      "widget": "spin", "modes": ["structure"], "label_key": "n_sizebin",
@@ -144,10 +146,9 @@
 
     {"key": "kind_grid", "fortran_name": "kind_grid", "line_index": 16, "subindex": 1, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "kind_grid",
-     "range": [0, 9], "valid_values": [0, 1],
+     "range": [0, 1], "valid_values": [0, 1],
      "core_reads": true, "core_uses": true, "rewritten_by": [],
-     "danger": {"kind": "treated_as_other", "zh": "任何非 0 值都按「手动给边界」处理"},
-     "note": "0=自动生成边界 / 非 0=手动"},
+     "note": "0 = 自动生成对数粒径边界（忽略 cfg 里的直径行）/ 1 = 读 cfg 里的直径行（= 用手填的 Size bins 表，出厂默认）。2026-09-23：控件范围由 0–9 收窄为 0–1，标签由「网格模式」改为「粒径边界来源」"},
 
     {"key": "n_groups", "fortran_name": "N_groups", "line_index": 17, "type": "int",
      "widget": "spin", "modes": ["advanced"], "label_key": "n_groups",
@@ -169,12 +170,13 @@
      "note": "0=用内置三套场景分布自动算初值；1=用配置里逐档写好的质量。它决定了 init_scenario 是否有效 —— 这是 #16 的成因"},
 
     {"key": "kind_composition", "fortran_name": "kind_composition", "line_index": "after_diameter", "type": "int",
-     "widget": "spin", "modes": ["advanced"], "label_key": "kind_composition",
+     "widget": null, "modes": ["none"], "label_key": null,
+     "widget_null_reason": "2026-09-23 已移除控件（Bug #21）：本 app 的模型是「用户手填 Fraction 表」，只支持 0；选 1 会让核心忽略表格而偷偷均分，留着比去掉更危险",
      "range": [0, 9], "valid_values": [0, 1],
      "core_reads": true, "core_uses": true, "rewritten_by": ["mixing_assumption"],
-     "danger": {"kind": "uninitialized", "zh": "填 2-9 时核心两个分支都不进，frac_bound 数组已分配但从未赋值（读未初始化内存）"},
+     "danger": {"kind": "uninitialized", "zh": "填 2–9 时核心两个分支都不进，frac_bound 数组已分配但从未赋值（读未初始化内存）"},
      "known_defect": "#21",
-     "note": "核心读入后：0=从文件读分数边界 / 1=自动生成。运行前会被 _with_mixing_assumption 强制改成 0"},
+     "note": "核心真开关：0 = 从 cfg 读分数边界（`ModuleDiscretization:232`）；1 = 自动生成 `frac_bound(i)=(i-1)/N_frac`（`:291`）；另外影响输出列（`ModuleResultoutput:295/446`）。**但 app 会在运行前强制改成 0**（`_with_mixing_assumption` 两个分支都写 0），因为 Fraction 表是用户可编辑的、必须被尊重。控件已移除，值恒为 0"},
 
     {"key": "n_frac", "fortran_name": "N_frac", "line_index": "after_kind_composition", "type": "int",
      "widget": "spin", "modes": ["structure"], "label_key": "n_frac",
@@ -189,9 +191,9 @@
      "valid_values": ["INTERNAL_MIXING", "EXTERNAL_MIXING"],
      "in_cfg": false, "locked": true,
      "locked_reason": "载入任何 cfg 后恒为 EXTERNAL_MIXING（parse() 写死，cfg 里无此字段）",
-     "label_key_bug": "代码用 mixing_scheme_readonly_tip，JSON 里只有拼错的 mapping_scheme_readonly_tip ⇒ 解释文字不可见",
+     "label_key_bug": "#10 附带发现，已于 2026-09-23 修：zh_CN/en_US 补上 mixing_scheme_readonly_tip（原先只有拼错的 mapping_scheme_readonly_tip ⇒ 解释文字不可见）",
      "known_defect": "#23",
-     "note": "这个名字和配置里的 mapping_scheme 是两个东西，容易混"},
+     "note": "这个名字和配置里的 mapping_scheme 是两个东西，容易混。控件无效果（locked）本身仍待人工决定：从 cfg 反推 / 放开手选 / 保持现状"},
 
     {"key": "mapping_scheme", "label_key": null, "widget": null, "modes": ["none"],
      "in_cfg": false, "core_reads": false,
@@ -221,9 +223,9 @@
     {"key": "explicit_keys", "label_key": null, "widget": null, "modes": ["none"],
      "in_cfg": false,
      "widget_null_reason": "内部标记，用户不可见",
-     "dropped_by": ["normalize"],
-     "known_defect": "#19",
-     "note": "记录「用户显式改过哪些字段」，使案例预设不覆盖用户设置。#11 的修复靠它，但 _collect_data 结尾调用 normalize() 时被丢弃 ⇒ GUI 路径失效"}
+     "dropped_by": [],
+     "known_defect": null,
+     "note": "记录「用户显式改过哪些字段」，使案例预设不覆盖用户设置。#11 引入、**#19 已修（2026-09-23）**：normalize() 现已保留本键，且 _collect_data 改为每轮重新计算（不再继承上一轮标记）⇒ GUI 路径的显式设置真正生效"}
   ],
 
   "transforms": [
@@ -245,16 +247,16 @@
      "applies_when": "每次读写、每次运行（无条件）",
      "rewrites": ["n_species", "n_sizebin", "n_frac", "n_groups", "redistribution_option",
                   "species_records", "emission_matrix", "init_bin_number", "diameter_bounds", "fraction_bounds"],
-     "drops": ["explicit_keys"],
-     "note": "构造成只含固定键的新字典 ⇒ 未登记的键（如 explicit_keys）会被静默丢弃"}
+     "note": "构造成只含固定键的新字典。**#19 已修（2026-09-23）**：explicit_keys 已列入保留键，不再被丢弃；新增该键时必须同步更新此处（否则又会静默丢）"
+    }
   ],
 
   "archive": {
-    "path_in_results": "experiment_config.cfg",
-    "serialized_from": "main_window.py:_start_runs 中的 self.data（变换之前）",
+    "path_in_results": "experiment_config.cfg（另逐臂 experiment_config_<scheme>.cfg）",
+    "serialized_from": "main_window.py:_start_runs 中 prepared_runs[i]['config_data']（变换之后）",
     "executed_serialized_from": "run_service.py:prepare_run 中变换之后的 data",
-    "consistent": false,
-    "known_defect": "#22",
-    "note": "归档用的是变换前的数据，实跑用的是变换后的数据 ⇒ 两者在任一变换生效时不同"
+    "consistent": true,
+    "known_defect": null,
+    "note": "**#22 已修（2026-09-23）**：归档改用 prepare_run 之后的 config_data，与实跑 cfg 同源。比较运行时两臂各跑一份不同的 cfg，故除 experiment_config.cfg（=第一臂）外再逐臂归档一份"
   }
 }

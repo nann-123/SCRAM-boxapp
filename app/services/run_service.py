@@ -14,7 +14,11 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from app.config_binding.config_model import ConfigModel
+from app.config_binding.config_model import (
+    REMAP_MODE_DUALPIVOT,
+    SUPPORTED_REDISTRIBUTION_OPTIONS,
+    ConfigModel,
+)
 from app.services import deployment_paths
 
 
@@ -37,12 +41,9 @@ MIXING_ASSUMPTIONS = ("INTERNAL_MIXING", "EXTERNAL_MIXING")
 RUNTIME_VERSION_FILE = ".scram_runtime_version.json"
 RUNTIME_HASH_SUFFIXES = {".f", ".f90", ".F90", ".c", ".h", ".inc", ".INC"}
 RUNTIME_HASH_FILENAMES = {"SConstruct", "README", "README.md"}
-RDB_CORE_MODE_MAP = {
-    "legacy": 0,
-    "core_conserv": 1,
-    "core_nogrow": 2,
-    "core_smallgrow": 3,
-}
+# 2026-09-23：原来的 RDB_CORE_MODE_MAP / SCRAM_RDB_CORE_CONSERV(_NAME) 已删除 ——
+# 核心从来不读那两个环境变量（Bug #12）。现在改为把 redistribution_option
+# 直接当作 SCRAM_REDISTRIBUTION_MODE 的值传给核心（核心真读，取值见 config_model.py）。
 
 
 class RunService:
@@ -93,7 +94,8 @@ class RunService:
     def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
         # Case preset provides suggested values to the GUI (via apply_case_preset),
         # but the user may override them（Bug #11：显式设置优先）。
-        # 注意 normalize() 只保留固定键，所以必须在 normalize 之前先把 explicit_keys 取出来。
+        # 这里先取一份是为了兼容"调用方直接传原始 dict"的路径；
+        # #19 修复（2026-09-23）后 normalize() 也会保留 explicit_keys，两条路径等价。
         explicit = {str(key) for key in (config_data.get("explicit_keys") or [])}
         data = self.config_model.normalize(config_data)
         data = self._with_mixing_assumption(data, scheme)
@@ -120,8 +122,9 @@ class RunService:
                 "SCRAM_SCHEME_NAME": scheme.lower(),
                 "SCRAM_COEFF_REPARTITION_MODE": self._coag_mapping_mode(scheme),
                 "SCRAM_COEFF_CACHE_MODE": "ALWAYS_REBUILD",
-                "SCRAM_RDB_CORE_CONSERV": str(self._rdb_core_mode(data)),
-                "SCRAM_RDB_CORE_CONSERV_NAME": str(data["scalars"].get("redistribution_option", "core_conserv")),
+                # 2026-09-23 改造（原 Bug #12）：核心认的是 SCRAM_REDISTRIBUTION_MODE
+                # （SCRAM1.2 新增，取值仅 legacy / moving_center_dualpivot，其它值核心会 error stop）。
+                "SCRAM_REDISTRIBUTION_MODE": self._remap_mode(data),
             }
         )
         self._prepare_runtime_environment(env)
@@ -219,7 +222,10 @@ class RunService:
         final_number = float("nan")
         total_steps = 0
         if timestep_path.exists():
-            rows = list(csv.DictReader(timestep_path.open()))
+            # Bug #27 修复（2026-09-23）：核心在 Windows 上按 ANSI 码页写 CSV，Python 默认按 UTF-8
+            # 读 ⇒ 案例名含中文时抛 UnicodeDecodeError 直接崩。统一显式指定编码 + errors="replace"
+            # （数值列纯 ASCII，不受影响；非 ASCII 标签至多显示为替换符，不再崩溃）。
+            rows = list(csv.DictReader(timestep_path.open(encoding="utf-8", errors="replace")))
             total_steps = len(rows)
             if rows:
                 final_mass = float(rows[-1]["total_mass"])
@@ -248,7 +254,8 @@ class RunService:
         }
         timestep_path = run_root / "csv" / "timestep_summary.csv"
         if timestep_path.exists():
-            rows = list(csv.DictReader(timestep_path.open()))
+            # 同 Bug #27：显式编码
+            rows = list(csv.DictReader(timestep_path.open(encoding="utf-8", errors="replace")))
             if rows:
                 row = rows[-1]
                 sim_seconds = float(row["time_seconds"])
@@ -270,7 +277,8 @@ class RunService:
         csv_root = output_root or self.results_root
         csv_root.mkdir(parents=True, exist_ok=True)
         perf_path = csv_root / "performance_summary.csv"
-        with perf_path.open("w", newline="") as handle:
+        # Bug #27：写出也显式 UTF-8，避免"写用系统码页、读用 UTF-8"的不对称
+        with perf_path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
             writer.writeheader()
             writer.writerows(rows)
@@ -303,7 +311,7 @@ class RunService:
                 )
         final_path = csv_root / "final_state_summary.csv"
         if final_rows:
-            with final_path.open("w", newline="") as handle:
+            with final_path.open("w", newline="", encoding="utf-8") as handle:
                 writer = csv.DictWriter(handle, fieldnames=list(final_rows[0].keys()))
                 writer.writeheader()
                 writer.writerows(final_rows)
@@ -355,9 +363,10 @@ class RunService:
             return "LEGACY"
         return "COAG_TARGET_NEAREST"
 
-    def _rdb_core_mode(self, data: dict[str, Any]) -> int:
-        option = str(data.get("scalars", {}).get("redistribution_option", "core_conserv")).strip().lower()
-        return RDB_CORE_MODE_MAP.get(option, 1)
+    def _remap_mode(self, data: dict[str, Any]) -> str:
+        """把 redistribution_option 翻成核心接受的 SCRAM_REDISTRIBUTION_MODE 取值。"""
+        option = str(data.get("scalars", {}).get("redistribution_option", REMAP_MODE_DUALPIVOT)).strip().lower()
+        return option if option in SUPPORTED_REDISTRIBUTION_OPTIONS else REMAP_MODE_DUALPIVOT
 
     def _read_average_diameter(self, run_root: Path, timestep: int) -> float:
         path = run_root / "csv" / "size_distribution_number.csv"
@@ -365,7 +374,8 @@ class RunService:
             return math.nan
         numer = 0.0
         denom = 0.0
-        with path.open() as handle:
+        # Bug #27：核心写出的 CSV 显式按 UTF-8 容错读取
+        with path.open(encoding="utf-8", errors="replace") as handle:
             for row in csv.DictReader(handle):
                 if int(float(row["timestep"])) != timestep:
                     continue
@@ -523,8 +533,7 @@ class RunService:
             "runtime_manifest": prepared.get("runtime_manifest", {}),
             "mapping_mode": prepared["env"].get("SCRAM_COEFF_REPARTITION_MODE", ""),
             "cache_mode": prepared["env"].get("SCRAM_COEFF_CACHE_MODE", ""),
-            "rdb_core_mode": prepared["env"].get("SCRAM_RDB_CORE_CONSERV", ""),
-            "rdb_core_mode_name": prepared["env"].get("SCRAM_RDB_CORE_CONSERV_NAME", ""),
+            "redistribution_mode": prepared["env"].get("SCRAM_REDISTRIBUTION_MODE", ""),
             "results_dir": prepared["env"].get("SCRAM_RESULTS_DIR", ""),
         }
         handle.write("# SCRAM BoxApp runtime metadata\n")
@@ -755,7 +764,7 @@ class RunService:
         if not rows:
             return
         path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("w", newline="") as handle:
+        with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
             writer.writeheader()
             writer.writerows(rows)

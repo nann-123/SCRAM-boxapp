@@ -22,7 +22,11 @@ MODE="${1:-safe}"
 say() { printf '%s\n' "$*"; }
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
-[ "$(uname -s)" = "Linux" ] || die "this script builds the Linux runtime; use scripts/package_app_windows.ps1 on Windows"
+[ "$(uname -s)" = "Linux" ] || die "this script builds the Linux runtime. On Windows there
+  is no one-click build script: build source/SCRAM1.2 with SCons yourself and overwrite
+  runtime/windows/ProgramSCRAM.exe (see docs/windows_devkit_readme_zh.md, section 9).
+  Beware: scripts/package_app_windows.ps1 only packages, it does NOT build the core.
+  Verify the result with: python scripts/check_runtime_version.py"
 
 # --- prerequisites ----------------------------------------------------------
 command -v gfortran  >/dev/null 2>&1 || die "gfortran not found        (Debian/Ubuntu: sudo apt install gfortran)"

@@ -283,6 +283,7 @@ class MainWindow(QMainWindow):
         self.scenario_combo.addItem(self.i18n.t("scenario_hazy"), 1)
         self.scenario_combo.addItem(self.i18n.t("scenario_urban"), 2)
         self.scenario_combo.addItem(self.i18n.t("scenario_clear"), 3)
+        self.scenario_combo.setToolTip(self.i18n.t("init_scenario_tip"))
         self.scenario_combo.currentIndexChanged.connect(self._sync_visibility)
         self.tag_external_box = QCheckBox(self.i18n.t("tag_external"))
         self.tag_external_box.toggled.connect(self._sync_visibility)
@@ -315,13 +316,16 @@ class MainWindow(QMainWindow):
         advanced_grid.setColumnStretch(3, 1)
         self.cond_only_widget = QWidget()
         cond_form = QFormLayout(self.cond_only_widget)
-        self.field_widgets["sulfate_computation"] = self._int_spin(0, 9)
-        self.field_widgets["redistribution_method"] = self._int_spin(0, 9)
+        self.field_widgets["sulfate_computation"] = self._int_spin(0, 1)
+        self.field_widgets["sulfate_computation"].setToolTip(self.i18n.t("sulfate_computation_tip"))
+        self.field_widgets["redistribution_method"] = self._int_spin(0, 6)
+        self.field_widgets["redistribution_method"].setToolTip(self.i18n.t("redistribution_method_tip"))
+        # 2026-09-23 改造（原 Bug #12）：这个下拉以前叫「RDB core-aware 选项」，四个值核心都不读。
+        # 现在它接的是核心真会读的 SCRAM_REDISTRIBUTION_MODE（SCRAM1.2 新增）。
         self.redistribution_option_combo = QComboBox()
+        self.redistribution_option_combo.addItem(self.i18n.t("rdb_dual_pivot"), "moving_center_dualpivot")
         self.redistribution_option_combo.addItem(self.i18n.t("rdb_legacy"), "legacy")
-        self.redistribution_option_combo.addItem(self.i18n.t("rdb_core_conserv"), "core_conserv")
-        self.redistribution_option_combo.addItem(self.i18n.t("rdb_core_nogrow"), "core_nogrow")
-        self.redistribution_option_combo.addItem(self.i18n.t("rdb_core_smallgrow"), "core_smallgrow")
+        self.redistribution_option_combo.setToolTip(self.i18n.t("redistribution_option_tip"))
         cond_form.addRow(self.i18n.t("sulfate_computation"), self.field_widgets["sulfate_computation"])
         cond_form.addRow(self.i18n.t("redistribution_method"), self.field_widgets["redistribution_method"])
         cond_form.addRow(self.i18n.t("redistribution_option"), self.redistribution_option_combo)
@@ -331,6 +335,7 @@ class MainWindow(QMainWindow):
         self.nucl_only_widget = QWidget()
         nucl_form = QFormLayout(self.nucl_only_widget)
         self.field_widgets["nucl_model"] = self._int_spin(0, 9)
+        self.field_widgets["nucl_model"].setToolTip(self.i18n.t("nucl_model_tip"))
         nucl_form.addRow(self.i18n.t("nucl_model"), self.field_widgets["nucl_model"])
         nucl_box = QGroupBox(self.i18n.t("nucl_card"))
         nucl_box_layout = QVBoxLayout(nucl_box)
@@ -345,15 +350,19 @@ class MainWindow(QMainWindow):
 
         self.grid_only_widget = QWidget()
         grid_form = QFormLayout(self.grid_only_widget)
-        self.field_widgets["dynamic_solver"] = self._int_spin(0, 9)
-        self.field_widgets["tag_thrm"] = self._int_spin(0, 9)
-        self.field_widgets["kind_grid"] = self._int_spin(0, 9)
-        self.field_widgets["kind_composition"] = self._int_spin(0, 9)
+        # 以下三个数字框在 2026-09-23 已收窄为「只有有效取值」（原来 0–9，越界会导致
+        # 核心死循环或静默空转）。
+        # 「热力学标记」（Bug #20，核心读了从来不用）与「组分离散模式」（Bug #21，本 app
+        # 的模型只支持 0、运行前会被强制归零）两个控件已移除；
+        # 它们的值仍会从模板/cfg 带出并写回 cfg，只是不再给用户一个「能点但没用」的旋钮。
+        self.field_widgets["dynamic_solver"] = self._int_spin(0, 2)
+        self.field_widgets["dynamic_solver"].setToolTip(self.i18n.t("dynamic_solver_tip"))
+        self.field_widgets["kind_grid"] = self._int_spin(0, 1)
+        self.field_widgets["kind_grid"].setToolTip(self.i18n.t("kind_grid_tip"))
         self.field_widgets["cut_dim"] = self._double_spin(0.0, 100.0, 0.0, decimals=4, single_step=0.1)
+        self.field_widgets["cut_dim"].setToolTip(self.i18n.t("cut_dim_tip"))
         grid_form.addRow(self.i18n.t("dynamic_solver"), self.field_widgets["dynamic_solver"])
-        grid_form.addRow(self.i18n.t("tag_thrm"), self.field_widgets["tag_thrm"])
         grid_form.addRow(self.i18n.t("kind_grid"), self.field_widgets["kind_grid"])
-        grid_form.addRow(self.i18n.t("kind_composition"), self.field_widgets["kind_composition"])
         grid_form.addRow(self.i18n.t("cut_dim"), self.field_widgets["cut_dim"])
         grid_box = QGroupBox(self.i18n.t("grid_card"))
         grid_box_layout = QVBoxLayout(grid_box)
@@ -658,7 +667,7 @@ class MainWindow(QMainWindow):
             if self.scenario_combo.itemData(idx) == init_sc:
                 self.scenario_combo.setCurrentIndex(idx)
                 break
-        redistribution_option = str(scalars.get("redistribution_option", "core_conserv"))
+        redistribution_option = str(scalars.get("redistribution_option", "moving_center_dualpivot"))
         for idx in range(self.redistribution_option_combo.count()):
             if self.redistribution_option_combo.itemData(idx) == redistribution_option:
                 self.redistribution_option_combo.setCurrentIndex(idx)
@@ -704,9 +713,13 @@ class MainWindow(QMainWindow):
         # Bug #11 修复（2026-09-11）：把与当前 Case Preset 建议值不同的键标记为"显式"，
         # 运行时不会被预设覆盖——用户改过开关/时长，就按用户的跑；与预设一致时不标记，
         # 保持原有行为（选了预设即套用其过程与时长）。
+        # Bug #19 修复（2026-09-23）：
+        #   ① 改为**每次重新计算**，不再继承上一轮的标记。否则用户换案例预设后，旧标记仍然
+        #      生效，新预设的建议值永远进不来（例如上一轮把时长标成显式，之后换预设不生效）。
+        #   ② normalize() 现已保留该键，所以这里算好的集合能一路传到 prepare_run。
+        explicit: set[str] = set()
         preset = CASE_PRESETS.get(str(data.get("case_preset", "")))
         if preset:
-            explicit = {str(k) for k in data.get("explicit_keys", [])}
             for key, preset_key in (("with_coag", "with_coag"), ("with_cond", "with_cond"),
                                     ("with_nucl", "with_nucl"), ("final_time_hours", "duration_hours")):
                 try:
@@ -714,8 +727,7 @@ class MainWindow(QMainWindow):
                         explicit.add(key)
                 except (KeyError, TypeError, ValueError):
                     explicit.add(key)
-            if explicit:
-                data["explicit_keys"] = sorted(explicit)
+        data["explicit_keys"] = sorted(explicit)
         data["scalars"]["n_species"] = self.n_species_spin.value()
         data["scalars"]["n_sizebin"] = self.n_sizebin_spin.value()
         data["scalars"]["n_frac"] = self.n_frac_spin.value()
@@ -1099,13 +1111,24 @@ class MainWindow(QMainWindow):
         output_root.mkdir(parents=True, exist_ok=True)
         self.plot_service.set_results_root(output_root)
         self.report_service.set_results_root(output_root)
-        # Auto-save current config alongside the results
-        auto_cfg = output_root / "experiment_config.cfg"
-        self.config_model.serialize(self.data, auto_cfg)
         schemes = ("INTERNAL_MIXING", "EXTERNAL_MIXING") if compare else (self.mapping_scheme_combo.currentText(),)
         prepared_runs = [
             self.run_service.prepare_run(self.data, case_name, scheme, output_root=output_root) for scheme in schemes
         ]
+        # Bug #22 修复（2026-09-23）：归档必须用**变换之后**的数据，即与真正送给核心的 cfg 同源。
+        # 原实现在 prepare_run 之前序列化 self.data，而 prepare_run 内部还要跑
+        # _with_mixing_assumption（改 n_frac / fraction_bounds / tag_external / 组分离散）
+        # 与 _with_case_preset（改过程开关 / 时长）⇒ 归档与实跑是两份不同的配置，
+        # 用户照归档文件重跑会得到不同结果（可复现性缺陷）。
+        # 比较运行两臂各跑一份不同的 cfg，故逐臂各归档一份；
+        # 同时把第一臂写进 experiment_config.cfg，保持既有文件名约定不变。
+        auto_cfg = output_root / "experiment_config.cfg"
+        self.config_model.serialize(prepared_runs[0]["config_data"], auto_cfg)
+        for prepared in prepared_runs:
+            self.config_model.serialize(
+                prepared["config_data"],
+                output_root / f"experiment_config_{str(prepared['scheme']).lower()}.cfg",
+            )
         self.run_worker = RunWorker(self.run_service, prepared_runs)
         self.run_worker.stage_changed.connect(self._on_run_stage_changed)
         self.run_worker.message.connect(self._log)

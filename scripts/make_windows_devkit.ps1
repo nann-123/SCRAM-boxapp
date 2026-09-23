@@ -106,7 +106,14 @@ $RuntimeDest = Join-Path $CorePackageRoot "executables_or_wrappers\runtime\windo
 if (-not (Test-Path -LiteralPath (Join-Path $RuntimeSource "ProgramSCRAM.exe"))) {
     throw "ProgramSCRAM.exe is missing from $RuntimeSource"
 }
-$RuntimeExcludeDirs = @(".venv", ".conda-scram-build", "RESULT", "results", "boxapp_cfg", "__pycache__", ".pytest_cache")
+# Do NOT exclude `source`: shipping the SCRAM1.2 tree is the whole point of this DevKit
+# (see docs/windows_devkit_readme_zh.md, section 9). But `SCRAM1.1` must be excluded --
+# it is build residue left behind by the 1.1 -> 1.2 `git mv` rename (no SConstruct, no
+# .f90 sources, only a stale exe) and only misleads whoever unzips the package.
+# Note: package_app_windows.ps1 is a different script, and it DOES exclude `source`.
+# Keep this file pure ASCII: Windows PowerShell 5.1 decodes BOM-less .ps1 as ANSI, so a
+# non-ASCII comment can silently swallow the newline and comment out the next line.
+$RuntimeExcludeDirs = @(".venv", ".conda-scram-build", "RESULT", "results", "boxapp_cfg", "__pycache__", ".pytest_cache", "SCRAM1.1")
 $RuntimeExcludeFiles = @("*.pyc", "*.pyo", "*.obj", "*.o", "*.mod", "*.smod", ".sconsign.dblite", "*.log", "*.stackdump")
 Copy-TreeRobocopy $RuntimeSource $RuntimeDest $RuntimeExcludeDirs $RuntimeExcludeFiles
 

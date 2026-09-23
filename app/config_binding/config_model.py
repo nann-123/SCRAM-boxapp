@@ -33,8 +33,25 @@ def _parse_species_comment(comment: str) -> tuple[str, str]:
     return body, ""
 
 
-SUPPORTED_REDISTRIBUTION_OPTIONS = {"legacy", "core_conserv", "core_nogrow", "core_smallgrow"}
+# 2026-09-23 改造（原 Bug #12「RDB core-aware 死控件」）：
+# `redistribution_option` 现在接的是**核心真的会读**的环境变量 `SCRAM_REDISTRIBUTION_MODE`
+# （SCRAM1.2 新增，见 `SCRAM1.2/SRC/ModuleDiscretization.f90` 开头的 read_discretization）。
+# 核心接受且仅接受这两个值（其它值会 `error stop 'SCRAM1.2: unknown SCRAM_REDISTRIBUTION_MODE'`；
+# 变量未设置时默认就是 moving_center_dualpivot）：
+#   moving_center_dualpivot —— 1.2 新内核（默认；method≥2 一律走它，2/3/4/5/6 等价）
+#   legacy                 —— 旧内核，恢复 method 2/3/4/5/6 的旧语义（注意：legacy 下
+#                             method=6 会复现本体自带的「数量不守恒」Bug #7）
+REMAP_MODE_DUALPIVOT = "moving_center_dualpivot"
+REMAP_MODE_LEGACY = "legacy"
+SUPPORTED_REDISTRIBUTION_OPTIONS = {REMAP_MODE_DUALPIVOT, REMAP_MODE_LEGACY}
 SUPPORTED_MIXING_ASSUMPTIONS = {"INTERNAL_MIXING", "EXTERNAL_MIXING"}
+
+# Bug #24 安全闸门（2026-09-23）：核心 ModuleAdaptstep.f90 的求解器分发只判 0（euler）/1（ETR）/
+# 2（ROS2），**没有 else 分支**；而唯一推进子步时钟的语句只存在于这三个求解器内部
+# ⇒ 越界值会让外层 `do while (current_sub_time .lt. final_sub_time)` 永不退出（死循环挂住，
+# 只能强杀，实测 core 60 s 无任何 Progress 输出）。这里在运行前拦下，比让核心挂死好。
+# 注意：本表只用于**校验**，不改界面控件（控件范围收窄属界面变更，另议）。
+SUPPORTED_DYNAMIC_SOLVERS = {0, 1, 2}
 
 # 内核（SCRAM1.2/SRC/ModuleDiscretization.f90:129-136）在 nucl_model=5 时**按设计跳过**
 # `init_bin_number` + 两行 `init_bin_emission` 共三行：nucl_model=5 是自成一体的硬编码
@@ -145,7 +162,7 @@ class ConfigModel:
         data["diameter_bounds"] = [float(value) for value in _tokens(lines[diameter_line])]
         data["scalars"]["kind_composition"] = int(_tokens(lines[diameter_line + 1])[0])
         data["scalars"]["n_frac"] = int(_tokens(lines[diameter_line + 2])[0])
-        data["scalars"].setdefault("redistribution_option", "core_conserv")
+        data["scalars"].setdefault("redistribution_option", REMAP_MODE_DUALPIVOT)
         data["fraction_bounds"] = [float(value) for value in _tokens(lines[diameter_line + 3])]
         return data
 
@@ -232,14 +249,20 @@ class ConfigModel:
             "mixing_assumption": data.get("mixing_assumption", "EXTERNAL_MIXING"),
             "case_preset": data.get("case_preset", "coag_only"),
             "template_name": data.get("template_name", "tutorial_minimal"),
+            # Bug #19 修复（2026-09-23）：必须保留 explicit_keys。
+            # 原先这里构造成"只含固定键的新字典"，会把调用方刚算好的 explicit_keys 静默丢掉
+            # ⇒ GUI 路径上传给 prepare_run 的永远是空集 ⇒ 案例预设无条件覆盖用户设置
+            # （#11 的修复在 GUI 上失效）。normalize 是唯一稳妥的位置：
+            # _with_mixing_assumption 与 _with_case_preset 内部都会再调一次 normalize。
+            "explicit_keys": [str(key) for key in (data.get("explicit_keys") or [])],
         }
         normalized["scalars"]["n_species"] = int(normalized["scalars"]["n_species"])
         normalized["scalars"]["n_sizebin"] = int(normalized["scalars"]["n_sizebin"])
         normalized["scalars"]["n_frac"] = int(normalized["scalars"]["n_frac"])
         normalized["scalars"]["n_groups"] = int(normalized["scalars"]["n_groups"])
-        redistribution_option = str(normalized["scalars"].get("redistribution_option", "core_conserv")).strip().lower()
+        redistribution_option = str(normalized["scalars"].get("redistribution_option", REMAP_MODE_DUALPIVOT)).strip().lower()
         if redistribution_option not in SUPPORTED_REDISTRIBUTION_OPTIONS:
-            redistribution_option = "core_conserv"
+            redistribution_option = REMAP_MODE_DUALPIVOT
         normalized["scalars"]["redistribution_option"] = redistribution_option
         normalized["raw_lines"] = self.default_lines()
 
@@ -331,7 +354,22 @@ class ConfigModel:
         if normalized.get("mapping_scheme") == "LEGACY" and not normalized["scalars"]["coefficient_file"]:
             errors.append("legacy mapping requires a coefficient file")
         if normalized["scalars"].get("redistribution_option") not in SUPPORTED_REDISTRIBUTION_OPTIONS:
-            errors.append("redistribution option must be legacy, core_conserv, core_nogrow, or core_smallgrow")
+            errors.append(
+                "redistribution option must be moving_center_dualpivot or legacy "
+                "(it is passed to the core as SCRAM_REDISTRIBUTION_MODE)"
+            )
+        # Bug #24 安全闸门：越界的求解器号会让核心死循环挂住（见模块顶部注释）
+        try:
+            solver = int(normalized["scalars"].get("dynamic_solver", 2))
+        except (TypeError, ValueError):
+            errors.append("dynamic solver must be an integer (0, 1, or 2)")
+        else:
+            if solver not in SUPPORTED_DYNAMIC_SOLVERS:
+                errors.append(
+                    f"dynamic solver must be 0 (euler), 1 (ETR) or 2 (ROS2), got {solver}: "
+                    "any other value makes the core loop forever without advancing the "
+                    "sub-step clock (Bug #24)"
+                )
         return errors
 
     def size_rows(self, data: dict[str, Any]) -> list[dict[str, float | int | str]]:

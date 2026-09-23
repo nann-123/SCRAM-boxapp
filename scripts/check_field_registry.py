@@ -73,6 +73,14 @@ def real_uses(name: str, text: str) -> list[tuple[int, str]]:
 
 
 def main() -> int:
+    # 中文 Windows 上 stdout 的编码可能是 GBK（尤其是被管道/重定向时），
+    # 本脚本会打印 ✅/⚠ 之类不在 GBK 字符集内的符号 ⇒ 会以 UnicodeEncodeError 崩掉，
+    # 而"检查脚本因为打印而失败"是最没意义的失败。降级为替换符即可。
+    try:
+        sys.stdout.reconfigure(errors="replace")
+    except (AttributeError, OSError, ValueError):
+        pass
+
     print("== 字段登记表对账 ==")
     if not REGISTRY.exists():
         print(f"  找不到登记表：{REGISTRY}")
@@ -111,8 +119,26 @@ def main() -> int:
         name = f.get("fortran_name")
         key = f["key"]
         if not name:
+            # 不写进 cfg、而经环境变量传给核心的字段：用 read_via="env:VARNAME" 声明，
+            # 核对方式改为「核心源码里有没有 get_environment_variable(«VARNAME»)」。
+            # （2026-09-23 新增：redistribution_option 改造后走 SCRAM_REDISTRIBUTION_MODE，
+            # 它没有 cfg 字段名，旧校验会因「没有 fortran_name」直接报未知问题。）
+            read_via = str(f.get("read_via") or "")
+            if read_via.startswith("env:"):
+                env_name = read_via.split(":", 1)[1]
+                present = f"'{env_name}'" in all_fortran
+                declared_read = bool(f.get("core_reads"))
+                if declared_read != present:
+                    msg = (f"{key}: 声明 core_reads={declared_read}，但核心源码里"
+                           f"{'有' if present else '没有'}读取环境变量 {env_name}")
+                    (known if f.get("known_defect") else new).append(msg)
+                    print(f"    ⚠ {msg}")
+                else:
+                    print(f"    · {key}: 经环境变量 {env_name} 传入，核心"
+                          f"{'已读取' if present else '未读取'}（声明一致）")
+                continue
             if f.get("core_reads"):
-                new.append(f"{key}: 声明 core_reads=true 但没有 fortran_name，无法核对")
+                new.append(f"{key}: 声明 core_reads=true 但没有 fortran_name / read_via，无法核对")
             continue
         pat = re.compile(r"\b" + re.escape(name) + r"\b", re.IGNORECASE)
         in_read = bool(pat.search(read_block))

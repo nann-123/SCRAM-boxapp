@@ -3,7 +3,7 @@
 > **自主修复授权（2026-09-12）**：配置/契约层缺陷（base cfg、模板默认值、死控件、字段未落到核心）授权 agent 自主修复，路径限 app/**、examples/**、core/templates/**、core/defaults/**、scripts/linux/**、proposals/**、docs/checktest/**；每笔须附"数值影响证明 + 模板/契约体检输出 + 基线声明"三件套，并**先在本表登记**。物理口径/界面控件/发布资产/runtime-windows 源码仍须人工拍板（见 runbook §1）。
 > **标签（2026-09-12 复核新增）**：每条另标 `port`（移植层，该修、计入闸门）/ `upstream`（本体固有，只记录、不计入闸门）/ `needs-domain`（需领域判断）。当前：upstream = #7、#2/#5、#14；needs-domain = #13；其余为 port。
 > **结论三分类（2026-09-12 复核新增）**：`confirmed-bug`（有夹具+判据）/ `evidence-only`（证据已列、待人工定性）/ `unexplained`（如 Q-06 的 RH 跳变，不得以 clean 结案）。
-> 创建日期: 2026-07-23 | 最后更新: **2026-09-21** | 本轮：**nl=5 初始化口径专项审查**（补齐 #28 因果链；新登记 **#29**＝nl=5 多列分支重复投放；两个历史基线数字作废；撤回一条误判。完整报告 `docs/nl5与bug28审查_20260921.md`）——上一轮：**#9 归因更正 + 修复方向反转**（原记为内核「跳过却不消费」缺陷并改了 `ModuleDiscretization.f90`；实为 Python 写入器未复刻内核契约 ⇒ 现回退内核改动、只改 py 侧，**Windows 发行核无需重编译**）；此前 #19–#27（界面契约层体检：`explicit_keys` 丢失、`tag_thrm`/`dtmin` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
+> 创建日期: 2026-07-23 | 最后更新: **2026-09-23** | 本轮：**发布前 GUI 层修复批次**（修 **#19** `explicit_keys` 被 `normalize()` 丢弃、**#22** 归档 cfg ≠ 执行 cfg、**#27** 中文案例名致 CSV 解码崩溃；补 2 个 i18n 缺键；新增 **#24** 的 `dynamic_solver` 运行前闸门与**内核版本自检** `scripts/check_runtime_version.py`；清理 `source/SCRAM1.1` 构建残渣、重生成 DevKit 清单。完整报告 `docs/0923修改.md`）——上一轮：**nl=5 初始化口径专项审查**（补齐 #28 因果链；新登记 **#29**＝nl=5 多列分支重复投放；两个历史基线数字作废；撤回一条误判。完整报告 `docs/nl5与bug28审查_20260921.md`）——上一轮：**#9 归因更正 + 修复方向反转**（原记为内核「跳过却不消费」缺陷并改了 `ModuleDiscretization.f90`；实为 Python 写入器未复刻内核契约 ⇒ 现回退内核改动、只改 py 侧，**Windows 发行核无需重编译**）；此前 #19–#27（界面契约层体检：`explicit_keys` 丢失、`tag_thrm`/`dtmin` 死标签、`kind_composition` 被强制归零、归档 cfg ≠ 执行 cfg、混合假设恒为外混、方法号越界致核心死循环）；#11（Case Preset 在运行路径覆盖过程开关与时长）；#10 登记人工决定（④ 暂缓，重生成按 25 张）
 >
 > **标签体系待修改（2026-09-14 建议）**：现行 `upstream` 标签把三类性质完全不同的东西混在一起，建议拆为 `upstream-defect`（真实现错误，如 #7 → 需动核心）、`undefined-domain`（模型未定义域，如 #2/#5/#13 → 收权限即可消掉，不需要改核心）、`by-design`（有意为之，如 #14/#17 → 什么都不用做）。理由见 #19–#24 登记说明。
 > **2026-09-20 追加第四类 `port-defect`（移植契约缺陷）**：#9 原被归入 `upstream-defect` 并据此改了内核，实为**移植方未复刻内核约定** ⇒ 内核不该动，只需改 py 侧。判据（可复用）：**本体源码 `/home/yifeihu/SCRAM1.1` 的读取语句序列与仓库内核一致 ⇒ 缺陷必在移植侧**；`scripts/linux/config_roundtrip.py` 的 B 节已在自动比对这条。
@@ -255,6 +255,102 @@
 
 ---
 
+## 2026-09-23：发布前 GUI 层修复批次（本轮头条）
+
+> 完整报告：**`docs/0923修改.md`**（含每条改法、验证输出、以及「还需要你审查什么」的详细版）。
+> 本轮范围：**只动 GUI 层与绘图层**，不动任何 `.f90`、不改 cfg 数值语义、不增删界面控件。
+> 验证：`install_logs/verify_0923.py` 10 项全过；`scripts/run_standard_tests.py` 四项 smoke 全 ok（退出码 0）；
+> `scripts/check_field_registry.py` 退出码由 3 降为 **0**。
+
+### 1. 修复的缺陷
+
+| # | 位置 | 改法 | 验证 |
+|---|------|------|------|
+| **#19** | `config_model.normalize()` + `main_window._collect_data()` | `normalize()` 保留 `explicit_keys`；`_collect_data()` 改为每轮重算（不再继承上轮标记） | 界面取消凝并 + 时长改 1h ⇒ `explicit_keys=['final_time_hours','with_coag']` 存活，实跑 cfg 第 1 行=`0`、第 13 行=`1` ✅ |
+| **#22** | `main_window._start_runs()` | 归档改用 `prepare_run` 之后的 `config_data`；比较运行额外逐臂归档 `experiment_config_<scheme>.cfg` | 归档（变换后）== 实跑 cfg；归档（变换前）!= 实跑 cfg（佐证原缺陷真实存在）✅ |
+| **#27** | `run_service.py` 6 处 | CSV 读写显式编码（读核心 CSV 用 `utf-8`+`errors="replace"`，写自身汇总用 `utf-8`） | 语义不变；消除中文 case_name 的 `UnicodeDecodeError` |
+| **i18n** | `app/i18n/{zh_CN,en_US}.json` | 补 `config_preview`、`mixing_scheme_readonly_tip`（后者原先只有拼错的 `mapping_scheme_readonly_tip` ⇒ #23 的解释文字不可见） | 登记表引用的 32 个标签键，中英各缺 **0** 个 |
+
+### 2. 新增闸门（不改界面控件）
+
+- **#24 运行前拦截**：`config_model` 新增 `SUPPORTED_DYNAMIC_SOLVERS = {0,1,2}`，`validate()` 对越界值报错。
+  核内 `ModuleAdaptstep.f90` 的求解器分发无 `else` 分支、且推进子步时钟的语句只在这三个求解器内部
+  ⇒ 越界值会让 `do while` 永不退出（死循环挂住）。实测 5/9 已被拦下，2/0 正常通过。
+  ⚠️ **控件范围仍是 0–9**（收窄为下拉属界面变更，待人工拍板，见 §4 待审项）。
+- **内核版本自检**：新增 `scripts/check_runtime_version.py`（判据＝ 1.2 独有的 3 个字符串标记），
+  并挂进 `run_standard_tests.py`；加 `--require-core-1.2` 可变成发布硬闸门。
+
+### 3. 内核版本现状与 `SCRAM1.1` 残渣（回答「盘上怎么还有个 1.1」）
+
+| 二进制 | md5 | 1.2 标记 | 结论 |
+|---|---|---|---|
+| *app 实际执行* `%LOCALAPPDATA%\scram_boxapp_mixing\runtime\windows\ProgramSCRAM.exe` | `aeaf4a5e…` | 0/0/0 | ❌ **1.1** |
+| 共享运行时 `runtime/windows/ProgramSCRAM.exe` | `aeaf4a5e…` | 0/0/0 | ❌ **1.1**（2026-05-15 构建） |
+| 已打包发行版 `SCRAMBoxApp-windows-x64/_internal/…` | `aeaf4a5e…` | 0/0/0 | ❌ **1.1** |
+| `runtime/linux/ProgramSCRAM` | `a60700a9…` | **2/8/1** | ✅ **1.2** |
+| `source/SCRAM1.2/ProgramSCRAM.exe` | 缺失 | — | Windows 侧从未构建过 1.2 |
+
+- **`source/SCRAM1.1/` 不是«没删干净的源码树»**：git 里已无任何 `SCRAM1.1` 路径
+  （`0cbac3c` 有 **260 个 `R100` 改名条目**）；盘上残留只有 **8 个文件**—1 个旧 exe、
+  2 个 `.sconf_temp/conftest_*.c`、**5 个编辑器备份 `*~`**；**无 `SConstruct`、0 个 `.f90`** ⇒ 不可编译。
+- 「1.1 还在」的真正观感来源是仓库根 `WINDOWS_DEVKIT_MANIFEST.txt`（生成于 **2026-05-28**、源根
+  `D:\scram_boxapp_shared_release_clean`，由初版提交 `b3cf6f7` 带入）——它是**升级前的旧清单**。
+- 本轮处置：残渣已归档到 `install_logs/archive_scram11_residue_20260923/` 后删除；
+  `make_windows_devkit.ps1` 打包时排除 `SCRAM1.1`（**不**排除 `source`：学生要读 `source/SCRAM1.2`；
+  真正排 `source` 的是发布包脚本 `package_app_windows.ps1`）；清单已用官方脚本重新生成并覆盖
+  （含 `SCRAM1.1\` 的行 **0**、含 `SCRAM1.2\` 的行 **294**，旧清单相反）。
+- **Windows 重编译仍是唯一根治手段**（本机无 Fortran 工具链）。重编译后 `check_runtime_version.py`
+  应从「1.1」变「1.2」。
+
+### 4. 本轮撞到并修掉的三个「自己引入」的坑（教训，防复发）
+
+1. **`.ps1` 里不能写中文**：Windows PowerShell 5.1 对**无 BOM** 的 `.ps1` 按 ANSI(cp936) 解码，
+   中文注释的乱码尾字节**会吃掉行尾换行**，导致下一行 `$RuntimeExcludeDirs = @(...)` 被并进注释
+   ⇒ 该变量从未赋值 ⇒ 打包时 `/XD` 排除项**整体失效**。已改回纯 ASCII，并写入「本仓库 `.ps1` 一律 ASCII」的约定。
+   验证：放 `source/SCRAM1.1/junk_marker.txt` 探针后重打包，清单命中 **0** 次。
+2. **检查脚本不能因「打印」而崩**：`⇒`(U+21D2) 不在 GBK 字符集内，stdout 被管道/重定向时
+   `print` 抛 `UnicodeEncodeError`。已换 ASCII + 加 `sys.stdout.reconfigure(errors="replace")` 兜底。
+3. **`argparse` 参数名不能带点**：`--require-core-1.2` ⇒ 属性名 `require_core_1.2`
+   （非法），需显式 `dest="require_core_12"`。
+   另：同源问题在**既有脚本** `scripts/check_field_registry.py` 里也存在 —— 它打印 `✅`/`⚠`，
+   这两个字符不在 GBK 字符集内，**被管道/重定向时**会以 `UnicodeEncodeError` 退出（退出码 1），
+   看起来像"对账发现了严重问题"。已一并加上同样的 `reconfigure(errors="replace")` 兜底。
+
+### 5. 第二批（同日）：高级界面控件整理（#12 改造 / #20 #21 控件移除 / #24 收窄）
+
+原计划把这批归入「待人工拍板」，用户已明确指示处理，故本轮执行。**仍未改任何 `.f90`、未改 cfg 数值语义。**
+
+| 项 | 改前 | 改后 |
+|---|---|---|
+| **#12**「RDB core-aware 选项」 | 四个值 legacy / core_conserv / core_nogrow / core_smallgrow，核心一个都不读 ⇒ 终态逐位相同 | **改造为「重分布内核（SCRAM1.2）」**，接核心**真会读**的 `SCRAM_REDISTRIBUTION_MODE`，两个值：`moving_center_dualpivot`（默认）/ `legacy`。旧的 `SCRAM_RDB_CORE_CONSERV(_NAME)` 已从 `run_service` 删除 |
+| **#20**「热力学标记」 | 0–9 数字框，核心读了从不使用 | **控件移除**（核心侧未实现属作者遗留，已对作者原始树复现：同样声明+读取、0 处使用） |
+| **#21**「组分离散模式」 | 0–9 数字框，运行前被强制归零（假选择）；且 2–9 会让 `frac_bound` 未初始化 | **控件移除**。核心侧它是真开关（0=读 cfg 边界 / 1=自动均分），但本 app 的 Fraction 表是用户可编辑的、必须被尊重，所以只支持 0；要做「自动均分」属新功能 |
+| **#24**「动力学求解器」 | 0–9，填 3–9 核心死循环挂住 | 范围收窄为 **0–2**；标签改为「**时间积分求解器**」（原名易被误读为与 RDB 有关）；加 tooltip 说明 0=euler / 1=ETR / 2=ROS2 |
+| — 「网格模式」 | 0–9，名称与取值都不直观 | 范围收窄为 **0–1**，标签改为「**粒径边界来源**」（0=自动生成对数边界 / 1=用手填的 Size bins 表） |
+| — 「RDB 数值方法」`redistribution_method` | 名称误导（与 RDB 无关，其实是粒径重分布方法） | 标签改为「**粒径重分布方法**」；范围 **0–9 → 0–6**；tooltip 写清 1.2 语义（0/1 跳过、≥2 默认等价）与 legacy 下的旧含义 |
+| — 「硫酸冷凝模式」 | 0–9，且登记表原描述「非 0 一律按显式方法处理」**是错的** | 范围收窄为 **0–1**；描述更正为「填 2–9 时 `eq.0`/`eq.1` 两个分支都不进、被静默跳过」 |
+| — 「切分粒径」`cut_dim` | 名称与取值含义都看不懂 | 标签改为「**平衡/动态分界粒径 (µm)**」+ tooltip 说明 ICUT 换算，并提醒「出厂填 0 = 不做无机平衡，改大会开启一条出厂未跑的路径，结果会变」 |
+| — 「环境状态」`init_scenario` | 无任何说明 | 加 tooltip 写清**三层门槛**：① `tag_init=0` 才参与数值；② `nucl_model=5` 会优先走硬编码分支；③ 改组分比例那段还要求 `tagrho=1`。**它不是"只跟 nucl_model 有关"** |
+
+配套：
+- i18n 新增 8 个 `*_tip` 说明键、删掉 3 个废弃的 `rdb_core_*` 标签键、更新 5 个误导性标签名（中英同步）。
+- `scripts/check_field_registry.py` 新增 `read_via="env:VARNAME"` 支持：不写进 cfg、经环境变量传给核心的字段，改为核对「核心源码里有没有 `get_environment_variable('VARNAME')`」。
+- `install_logs/verify_0923.py` 扩到 **18 项**，新增「默认下发 moving_center_dualpivot」「旧环境变量不再下发」「选 legacy 下发 legacy」「非法值不透传」「两个死控件已移除」「四个控件范围已收窄」。
+
+⚠️ **改造 #12 带来的新风险必须记住**：选 `legacy` 会重新启用旧重分布内核，此时 `redistribution_method` 的旧语义（2/3/4/5/6）才生效，**且 legacy + 6 会复现本体自带的「数量不守恒」（#7）**。默认 `moving_center_dualpivot` 与改造前**逐位一致**（核心在未设该变量时默认就是它），零回归。
+
+### 6. 三条"是不是移植忘了"的查证结论
+
+用作者原始树 `E:/yifeihu/research/models/scram-v1.1/scram-1.1/SCRAM1.1` 逐项对照：
+
+| 问题 | 结论 |
+|---|---|
+| `ModuleAdaptstep.f90:303` 引用的 `time.inc` 是不是移植到 Windows 时漏了？ | **不是**。作者原始树里**也没有 `time.inc`**，全树无任何 `INCLUDE 'time.inc'`（`INC/` 下只有 CONST.INC / CONST_A.INC / paraero.inc / parameuler.inc / pointer.inc）⇒ 那个文件从未随发布代码分发，注释里承诺的 DTMIN/DTMAX 钳制**从未实现** |
+| `tag_thrm`（热力学标记）是移植丢失吗？ | **不是**。原始树同样「声明（ModuleInitialization.f90:55）+ 读取（ModuleDiscretization.f90:88）+ 0 处使用」 |
+| `dtmin`（最小时间步）是移植丢失吗？ | **不是**。原始树同样「声明（:105）+ 读取（:100）+ 0 处使用」 |
+
+---
+
 ## 一页看懂（说人话）
 
 > 给不熟悉内部术语的读者。逐条的精确证据、判据与代码位置见下方「修复状态」与「详细信息」两节。
@@ -268,10 +364,15 @@
 | 4 | 初始质量为零时密度算成 NaN → 已修 |
 | 6 | 界面点"运行"不生成结果图 → 已修 |
 | 8 | 核心内部崩了却报告"成功" → 已修 |
-| 11 | 界面里改过程开关/时长被案例预设静默忽略 → 已修 |
+| 11 | 界面里改过程开关/时长被案例预设静默忽略 → 已修。**但 2026-09-14 发现修复只在探针路径生效，GUI 路径仍被覆盖（#19）；#19 已于 2026-09-23 修掉** |
 | 14 | 换重分配方法 3/5 时粒子数暴涨 → 查明是方法定义使然，不是缺陷（产品默认用方法 2） |
 | 1 | 零质量模板初始质量为 0 → 现在的模板基座都换成非零初值，该路径在应用内已不可达，转为自动检查 |
 | 9 | 选了「论文验证专用」成核模式（`nucl_model=5`）后运行会崩 → **原因在软件这边不在核心**：配置文件多写了内核按约定不收的 3 行，核心读串行了。已改成"这个模式下就不写这 3 行" ⇒ 修好了，**Windows 版不用重编译** |
+| 19 | 界面里改的过程开关/时长被案例预设静默覆盖（#11 的修复在 GUI 路径失效）→ **已修（2026-09-23）** |
+| 22 | 归档的 `experiment_config.cfg` 不是真正拿去跑的那份 → **已修（2026-09-23）**，并逐臂归档 |
+| 27 | 案例名含中文时结果 CSV 解码崩溃 → **已修（2026-09-23）** |
+| 24 | 方法号填 3–9 会让核心死循环挂住 → **已加运行前拦截（2026-09-23）**，不会再挂死；控件范围是否收窄仍待定（见 C 表） |
+| i18n | 「配置预览」与混合假说提示语 2 个标签键缺失，界面直接显示英文键名 → **已修（2026-09-23）** |
 | 绘图核查 8 项 | 组成档号写死 / 参考臂目录名写死 / 缺 encoding / 纵轴缺单位 / 参考臂恒零线无语义 / 缺 CSV 的臂导致崩溃 / 全零数据照常出图 / 高位异常被图吞掉 → **全修**。另 1 项（终态堆叠柱自行聚合）核对后**确认无缺陷**（逐位等于 `final_mass`）。详见 `docs/绘图正确性核查_20260915.md` |
 
 ### B. 要在 Windows 上做的（机械动作，不需要你判断）
@@ -290,11 +391,11 @@
 | 16 | 界面"环境状态"选了没用（被另一个界面上没有的开关挡住） | a 联动（**已证可行**，推荐）/ b 暴露那个开关 / c 删掉下拉 |
 | 17 | 排放只在前 44 分钟发生，与模拟时长无关 | a 置 0 与本体一致 / b 做成可配 |
 | 18 | 保真度的合格线定在哪 | a 统一编译参数、守住 1e-5 / b 放宽并记录依据 / c 改判据（**推荐**） |
-| 24 | 方法号取值范围过宽：`dynamic_solver` 填 3–9 会让核心**死循环挂住**（实测，只能强杀） | a 把方法号改成只列有效值的下拉（**推荐**）/ b 保留数字框但加前置校验拦截 |
+| 24 | 方法号取值范围过宽：`dynamic_solver` 填 3–9 会让核心**死循环挂住**（实测，只能强杀） | ✅ **已加运行前拦截（2026-09-23）**，不会再挂死。剩下控件本身：a 改成只列 0/1/2 的下拉（**推荐**）/ b 保留数字框靠拦截 |
 | 20 | 界面"热力学标记"（`tag_thrm`）是死标签：核心读了就扔 | A 接上核心 / B 移除控件（与 #12/#15 同批） |
 | 25 | 界面"最小时间步"（`dtmin`）也是死标签：核心读了就扔，且注释里承诺的步长上下限从未实现 | a 移除控件（**推荐**，它本来就没生效）/ b 在核心补上 DTMIN/DTMAX 钳制（需改核心 + 重编译，属新功能） |
 | 21 | 界面"组分离散模式"（`kind_composition`）选什么都没用：运行前被强制归零 | a 允许用户选 / b 移除控件 |
-| 22 | 归档的 `experiment_config.cfg` 和真正拿去跑的配置不是同一份 | a 归档改用变换后的数据（**推荐**）/ b 归档时附差异说明 |
+| 22 | ~~归档的 `experiment_config.cfg` 和真正拿去跑的配置不是同一份~~ | ✅ **已修（2026-09-23）**：归档改用变换后的数据，并逐臂归档 |
 | 23 | 上传内混配置后界面恒按外混跑，且解释文字因键名拼错根本看不到 | a 从 cfg 反推内混/外混 / b 放开手选 / c 维持现状（至少修 i18n 键名） |
 | 13 | 零质量时内混/外混的粒子数差 4 个数量级 | 需物理判断：设计使然 or 缺陷 |
 | 2 / 5 | 零质量时两套凝并路径行为不一致（本体自带的老毛病） | 是否要修（要动核心 → 先出提案） |
@@ -318,26 +419,30 @@
 | 9 | 🔴 P1 | 初始化 | ✅ **已修复**（2026-09-20 更正方向：改 py 侧，内核保持本体原样） | **归因更正**：原记为内核「跳过却不消费」缺陷，实为**移植契约缺陷** —— 内核在 `nucl_model=5` 时**按设计跳过**那 3 行（该模式是自成一体的硬编码验证分支，这两个数组读了也不用；本体 `/home/yifeihu/SCRAM1.1/SRC/ModuleDiscretization.f90` 的读取语句序列与仓库原内核一致），而 Python 写入器 `config_model.py` 自初始提交 `b3cf6f7` 起**无条件写出**这 3 行 ⇒ 文件指针错位。**修复**：`7cc59c7` 对内核的改动**已回退**（恢复 `if(nucl_model.ne.5)`），改为 py 侧按 `nucl_model` 条件化写出/读入（`_has_emission_block`）。**实测**：① 原始内核 + 53 行夹具 → 退出码 0、初始总质量 `226.07444159907240`，与 2026-07-27 记录**逐位一致**；② 原始内核 + 56 行夹具 → `Bad integer for item 1 in list input` 崩溃（负例仍有效）；③ py 生成的 cfg 现为 53 行，跑原始内核退出码 0；④ `probe_cell --cfg docs/checktest/nucl_model5_fixed.cfg` 双臂 `status=ok`；⑤ 5 个 `nucl_model≠5` 模板输出**逐字节未变**（零回归）。新增守卫 `scripts/linux/check_cfg_contract.py`（修复前 4/16 项红灯、修复后 16/16 全绿）。**⇒ Windows 发行核（2026-05-15 构建）无需重编译即可生效**，原「必须重编译」的前提随之作废 |
 | 10 | 🟡 P1 | 文档资产 | 🟡 **根因已定位并修复脚本；资产待重生成**（2026-09-14 更新） | **根因不是缺字体，而是脚本强制了 `offscreen` 平台**：`scripts/capture_screenshots.py:11` 写 `os.environ.setdefault("QT_QPA_PLATFORM","offscreen")`，而 **Qt 的 offscreen 插件在 Windows 上返回空的字体库**（实测 `QFontDatabase.families()` = **0 个家族**；改用真实 `windows` 平台 = **140 个家族**，含脚本想要的 `Microsoft YaHei UI`）⇒ 所有字形退化为 □。**这意味着按原文"在有字体的 Windows 上重生成"永远修不好** —— 任何 Windows 机器上跑都会是方框。**已修脚本**（平台自适应 + 字体文件回退 + 拿不到 CJK 字体则显式报错退出），本机实测：`main_zh` 密度 **0.0115 → 0.0470**、`main_en` 0.0114 → 0.0368、`help_panel` 0.0066 → 0.0517，目视文字全部可读。**剩余**：三处发布资产（9+9+8 张）仍需重生成；自检对稀疏面板（`running_state`/`report_panel`/`settings_panel`/`results_view`）会误报 LOW 密度（已目视确认文字正常） |
 | 11 | 🟠 P1 | 运行 | ✅ 已修复（2026-09-11） | 预设改为"建议值"：显式设置优先——`run_service.prepare_run/_with_case_preset` 接受 `explicit_keys`（须在 normalize 之前取出，normalize 只保留固定键）；GUI `_collect_data` 把"与当前预设建议值不同"的键标为显式；`probe_cell --set` 的键自动标记。验证：① `noop_probe.py --template tutorial_minimal` 关掉凝并后终态数量变化 5.3e-3（此前报"覆写未生效"）；② 完整标准测试数值**逐位**与基线一致（EXT 33.7511 / INT 32.7338，540/88 步，五项 smoke 全过）→ 行为保持 |
-| 12 | 🟠 P1 | 运行/配置 | ❌ 未修复（2026-09-12 新发现） | GUI 的 `redistribution_option`（RDB 核心模式 legacy/core_conserv/core_nogrow/core_smallgrow）是**死控件**：app 仅经环境变量 `SCRAM_RDB_CORE_CONSERV`/`SCRAM_RDB_CORE_CONSERV_NAME` 传递（run_service.py:122-123），但编译的 Fortran（ModuleCoeffRepartitionBoxmodel.f90）只读 `SCRAM_COEFF_REPARTITION_MODE`（=映射方案，另一控件），对 RDB 核心模式**无任何变量/环境读取**，生成的 .cfg 也无此字段 → 选项永不生效。实测 gmd_paris_full（凝并开、540 步）四值终态**逐位相同**（EXT mass=33.751055266282556 / INT mass=32.73376655624839）。连带使 `docs/checktest/hazy_nogrow_{test,fixed}.cfg` 的 test/fixed 区分失效（二者 Fortran 可读字段逐字节相同）。已备夹具对 `redistribution_option_dead_{test,fixed}.cfg` 与 patch 提案 `proposals/bug12_rdb_core_mode_dead.patch` |
+| 12 | 🟠 P1 | 运行/配置 | ✅ **已修复（2026-09-23 改造）** | 见上方「2026-09-23」章节 §5。该控件不再传核心不读的 `SCRAM_RDB_CORE_CONSERV`，改为传核心真会读的 **`SCRAM_REDISTRIBUTION_MODE`**（SCRAM1.2 新增），取值 moving_center_dualpivot / legacy，标签改为「重分布内核（SCRAM1.2）」。**原始记录**：GUI 的 `redistribution_option`（RDB 核心模式 legacy/core_conserv/core_nogrow/core_smallgrow）是**死控件**：app 仅经环境变量 `SCRAM_RDB_CORE_CONSERV`/`SCRAM_RDB_CORE_CONSERV_NAME` 传递（run_service.py:122-123），但编译的 Fortran（ModuleCoeffRepartitionBoxmodel.f90）只读 `SCRAM_COEFF_REPARTITION_MODE`（=映射方案，另一控件），对 RDB 核心模式**无任何变量/环境读取**，生成的 .cfg 也无此字段 → 选项永不生效。实测 gmd_paris_full（凝并开、540 步）四值终态**逐位相同**（EXT mass=33.751055266282556 / INT mass=32.73376655624839）。连带使 `docs/checktest/hazy_nogrow_{test,fixed}.cfg` 的 test/fixed 区分失效（二者 Fortran 可读字段逐字节相同）。已备夹具对 `redistribution_option_dead_{test,fixed}.cfg` 与 patch 提案 `proposals/bug12_rdb_core_mode_dead.patch` |
 | 13 | 🟠 P1 | 初始化/混合假设 | ❌ 性质待判（2026-09-12 复核发现） | 零质量/微质量配置下 **EXT/INT 终态粒子数差 4 个数量级**：`docs/checktest/zero_initial_mass_test.cfg` → EXT `final_number=0.0` 而 INT `4.12452e9`；`tiny_initial_mass` → EXT `4.99998e5` 而 INT `4.12452e9`。证据：`install_logs/auto/probes/q07_zero_mass_test/`、`q07_tiny_mass/probe.json`（2026-09-12 10:11 轮）。同一物理设置两侧不应差 4 个数量级 → 建议按 `_test/_fixed` 夹具登记后定性 |
 | 14 | 🟡 P2 | 重分配 | ✅ 已判：设计使然（上游固有，2026-09-13 源码+数值分类，Q-19 关闭） | `redistribution_method=3/5` 下**粒子数暴增**：`gmd_paris_condensation + method=3` → EXT `5.28349e12`/INT `6.15417e12`，method=2 为 `3.44565e10`（**×153**）；method=5 → `1.07e11`（×3）；质量基本不变。同现象在 `fuzz_q11/fuzz_report.json` 里已存在（idx 9 达 ×383）却被判 clean——因为判据只查质量残差。euler_mass/hemen 本非数量守恒，故属"设计使然 vs 缺陷"待人工判定，但必须先入台账 |
 | 15 | 🟡 P2 | 运行/配置 | ❌ 未修（2026-09-12 复核发现，与 #12 同类） | 配置标量 `mapping_scheme`（`LEGACY`/`DETERMINISTIC_NEAREST`，模板与校验器都在用）**从不进入核心**：`run_service._coag_mapping_mode(scheme)` 收到的是**混合假设**（`INTERNAL_MIXING`/`EXTERNAL_MIXING`，见 `run_comparison` 的 `MIXING_ASSUMPTIONS` 循环），两者都不等于 `LEGACY` ⇒ 送给核心的 `SCRAM_COEFF_REPARTITION_MODE` **恒为 `COAG_TARGET_NEAREST`**。实测：手工把该 env 设为 `LEGACY` 跑 Mégapole/12h，终态与 `COAG_TARGET_NEAREST` **完全相同** ⇒ 该开关在当前配置下也观察不到影响。`run.log` 里记录的 `mapping_mode` 因此是固定值。GUI 的"mapping_scheme"下拉实际绑定的是混合假设（`main_window.py:214-218`），与这个标量不是一回事。**2026-09-12 22:15 轮夹具固化（Q-21）**：`probe_cell gmd_paris_condensation` 默认 vs `--set mapping_scheme=LEGACY` 两臂终态逐位相同（EXT mass=33.0654/INT mass=32.6176/number=3.44653e10/steps=42），两臂 `run.log` `mapping_mode` 均=`COAG_TARGET_NEAREST`、生成 cfg 无 mapping 字段 ⇒ 死配置确认；证据 `install_logs/auto/probes/q21_{default,legacy}/`，台账 `Q-21 · mapping_scheme_env · app_to_core · contract` → bug |
 | 16 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-12 复核发现，port；2026-09-13 Q-24 已定位根因，处置待人工） | GUI「环境状态」(init_scenario: 1 霾天/2 城市/3 清洁) **在出厂配置下无任何数值效果**：初值是否采用内置三套场景分布由 `tag_init`（初始化模式）决定，而所有基座 cfg 都是 `30 1`/`2 1`（=1，用配置里的逐档质量），且 `tag_init` 在 GUI 未暴露（用户改不了）。实测：`gmd_paris_full` 下 init_scenario=1/2/3 的 t=0 质量 21.583170063260344、数量 1.4625e10 **逐位相同**。**2026-09-13 Q-24 定位**：tag_init=0 臂三场景对照（gmd_paris_full,0.5h）status=ok 无 NaN/Inf、residual~1e-18，初值质量 2.560/2.581/2.587e-11（即本条注的 2.5e-11，是初值气溶胶质量，场景对数正态初值本应可忽略，非缺陷），终态质量 EXT 11.1139/11.1076/11.1028（来自冷凝 Mass Cond~11.09）三场景不同 ⇒ tag_init=0 路径数值可用、三场景确实产生差异 ⇒ 控件非设计性死，仅被未暴露的 tag_init 门控。历史依据：控件由 `321fca2`（2026-07-22）加入，对应 ModuleDiscretization.f90 三种三模态对数正态分布；`05d609c` 曾判定"tag_init=0 方案不可行"（Q-24 已证伪：路径可用）。处置（待人工，属"增删控件"类）：a) 场景与 tag_init 联动（**Q-24 已证可行**）；b) 暴露 tag_init 并标注条件；c) 移除下拉 |
 | 17 | 🟡 P2 | 运行/配置 | ❌ 未修（2026-09-12 复核发现，upstream） | **普通模式排放窗口只有 2.64376e3 s（≈44.06 min）**，与模拟时长无关：`ModuleDiscretization.f90:1194-1205` 在 `nucl_model=5` 时 `time_emis=43200 s`，否则 `2.64376e3 s`；超出后 `emis_dt=0` ⇒ 停止排放。另两处同常数（:1274/:1287）只是"排放引起的步长限制"守卫，**不关闭凝并/冷凝**。代码无注释、全仓与本体无其它引用 ⇒ 判为作者为某场景调死的经验值。影响：本体论文 cfg（`INIT/cfg_megapole_01072009.cfg`）emission 全 0 ⇒ 其结论不受影响；仓库 baseline 基座 SO4 emission=1.72e-5 ⇒ 12h 只有前 44 分钟在排放。处置（待人工）：a) 与本体口径一致把 emission 置 0；b) 新增"排放时长可配"（新功能）。**2026-09-13 05:xx 轮数值确认（Q-23）**：`gmd_paris_emission_only` 全关过程 12h vs 0.5h 两臂，排放 delta 比值=0.6808484885=1800/2643.76 逐位精确 ⇒ 窗口 2643.76 s 确认、排放窗口内线性；upstream 固有，非移植缺陷，不计入 gate。证据 `install_logs/auto/probes/q23_emis_window_{12h,05h,30min}/`|
 | 18 | 🟠 P1 | 保真度/gate | ❌ gate 未达标（2026-09-13 Q-26 新发现，port 标签，计入 gate） | **移植保真度 gate 实际未达标**：同一本体规范 cfg（`~/SCRAM1.1/INIT/cfg_megapole_01072009.cfg`，coef_s5_f3_b7.nc，12h）跑本体 exe（sha256 `71473328`）与仓库 exe（sha256 `f03b90aa`，stock）：总质量**逐位一致** `36.48929720841787`（bit-identical，达标）；但气溶胶质量 `24.22834256300118` vs `24.22867515785633`，**相对差 `1.373e-05` > gate 阈值 `1e-5` ⇒ gate_pass=False**（未达标）。气相 `2.713e-05`、Mass Cond `1.258e-04`、total_water `4.320e-05`。**新发现**：手工轮（runbook P4 / 台账 `fidelity · upstream_vs_devkit · megapole12h`）把 `1.4e-5` 记为 clean，但按 release gate 阈值（气溶胶质量差 ≤1e-5）实际未达标——差异源于 `-g` vs `-O2` 编译标志（非代码改动），属"阈值/口径"问题而非移植缺陷。**处置（待人工，不得自行放宽阈值）**：a) 维持 1e-5 并给本体/仓库统一编译标志（重编译对齐）；b) 调整阈值并记录依据；c) 以"总质量逐位一致"为硬判据、气溶胶差为软信号（改 gate 定义）。已脚本化 `scripts/linux/fidelity_check.py`（建议挂 deep 轮）。证据 `install_logs/auto/fidelity_check/20260913-082220/` + `install_logs/auto/fidelity_q26/`；台账 `Q-26 · fidelity_gate · upstream_vs_repo · contract` → bug |
-| 19 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 新发现） | **#11 的修复在 GUI 路径上失效**：`_collect_data()` 结尾 `return self.config_model.normalize(data)`，而 `normalize()` 构建的新字典**不含 `explicit_keys`**（`config_model.py:180-195`）⇒ `prepare_run` 收到空集 ⇒ `_with_case_preset` 无条件套预设。实测（模板 `gmd_paris_full`，模拟"界面关掉凝并 + 时长改 1h"）：探针路径 `with_coag=0 / final_time_hours=1.0`（保住），**GUI 路径 `with_coag=1 / final_time_hours=12.0`（被覆盖）**。当初 #11 的验证用的是 `noop_probe.py`（探针路径显式传 `explicit_keys`），故未照到 GUI |
-| 20 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 新发现，与 #12/#15 同类） | GUI「热力学标记」`tag_thrm` 是**死标签**：`grep -rni "tag_thrm" SRC INC` **仅 1 处命中**（`SRC/ModuleDiscretization.f90:89` 的 `read(10,*)dynamic_solver,tag_thrm`），核心读入后**从未使用**。对照词频：`tagrho` 3 / `tag_external` 6 / `Tag_init` 8。GUI 上 `main_window.py:349` 提供 0–9 数字框 ⇒ 改任何值结果逐位相同 |
-| 21 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 新发现） | GUI「组分离散模式」`kind_composition` 在运行路径**被强制归零**：`run_service._with_mixing_assumption` 的 INTERNAL/EXTERNAL **两个分支都赋值 `= 0`**（`run_service.py:338,345`），而 cfg 序列化发生在其后（`prepare_run:107-108`）⇒ 用户选的 1 永远进不了实跑的 cfg。附带：归档 cfg 反而保留了用户值（见 #22），造成两份配置不一致 |
-| 22 | 🟠 P1 | 运行/可复现性 | ❌ 未修（2026-09-14 新发现） | **归档的 `experiment_config.cfg` ≠ 实际执行的配置**：`_start_runs` 先用 `self.data` 序列化归档（`main_window.py:1101-1102`），再调 `prepare_run` 生成实跑 cfg；而 `prepare_run` 内部会先跑 `_with_mixing_assumption`（改 `n_frac`/`fraction_bounds`/`tag_external`/`kind_composition`）与 `_with_case_preset`（改过程开关/时长）**再**序列化 ⇒ 二者在任一变换生效时不同。影响：教学/报告场景下用户照归档文件重跑会得到不同结果 |
+| 19 | 🟠 P1 | 运行/配置 | ✅ **已修复（2026-09-23）** | 见上方「2026-09-23」章节 §1。`normalize()` 保留 `explicit_keys` + `_collect_data()` 每轮重算；实测界面取消凝并 + 时长改 1h ⇒ 实跑 cfg 第 1 行=0、第 13 行=1 ✅ |
+| 20 | 🟠 P1 | 运行/配置 | ✅ **已修复（2026-09-23）：控件已移除** | 见上方「2026-09-23」章节 §5。**原始记录**：GUI「热力学标记」`tag_thrm` 是**死标签**：`grep -rni "tag_thrm" SRC INC` 仅 2 处命中（`ModuleInitialization.f90:55` 的声明、`ModuleDiscretization.f90:104` 的读取），核心读入后**从未使用**。对照词频：`tagrho` 3 / `tag_external` 6 / `Tag_init` 8。GUI 上 `main_window.py:349` 曾提供 0–9 数字框 ⇒ 改任何值结果逐位相同。**作者原始树同样如此**（声明+读取、0 处使用）⇒ 属作者未实现，非移植丢失。核心侧仍「读了不用」，但界面不再提供旋钮；值仍从模板/cfg 带出并写回 cfg |
+| 21 | 🟠 P1 | 运行/配置 | ✅ **已修复（2026-09-23）：控件已移除** | 见上方「2026-09-23」章节 §5。**原始记录**：`kind_composition` 在运行路径**被强制归零**：`run_service._with_mixing_assumption` 的 INTERNAL/EXTERNAL **两个分支都赋值 `= 0`**，而 cfg 序列化发生在其后 ⇒ 用户选的 1 永远进不了实跑的 cfg；附带归档 cfg 反而保留了用户值（见 #22）。**处置依据**：核心的 `kind_composition` 其实是**真开关**（0 = 读 cfg 里的分数边界 / 1 = 自动生成 `(i-1)/N_frac`，另影响 ModuleResultoutput 的输出列），但本 app 的模型是「用户手填 Fraction 表」、只支持 0；选 1 会让核心忽略表格而偷偷均分 ⇒ **移除控件比留着一个“假选择”更安全**。若将来要做「自动均分」应当作新功能：选中时需同时重建 Fraction 表 |
+| 22 | 🟠 P1 | 运行/可复现性 | ✅ **已修复（2026-09-23）** | 见上方「2026-09-23」章节 §1。**原始记录**：归档的 `experiment_config.cfg` ≠ 实际执行的配置：`_start_runs` 先用 `self.data` 序列化归档（`main_window.py:1101-1102`），再调 `prepare_run` 生成实跑 cfg；而 `prepare_run` 内部会先跑 `_with_mixing_assumption`（改 `n_frac`/`fraction_bounds`/`tag_external`/`kind_composition`）与 `_with_case_preset`（改过程开关/时长）**再**序列化 ⇒ 二者在任一变换生效时不同。影响：教学/报告场景下用户照归档文件重跑会得到不同结果 |
 | 23 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 复核；设计意图存在但实现缺失） | **载入任何 cfg 后"混合假设"恒为 `EXTERNAL_MIXING`**：`config_model.parse()` 第 63 行写死该值，cfg 中**根本不存在此字段** ⇒ `_load_data_into_widgets` 再把它当"锁定值"（`main_window.py:647`）⇒ 上传内部混合配置也只能按外混跑。i18n 提示语声称"混合假设由载入的配置文件决定，不可手动修改"，但**没有任何代码从文件反推**（未用 `n_frac==1` 等判据）。**附带**：该提示语键名写错——代码用 `mixing_scheme_readonly_tip`，两个语言文件里只有 `mapping_scheme_readonly_tip`（同一提交 `3455826` 引入）⇒ 用户连解释都看不到 |
-| 24 | 🔴 P1 | 运行/健壮性 | ✅ **已实测确认**（2026-09-14） | **方法号越界导致核心死循环挂住**：`ModuleAdaptstep.f90:86-100` 的 solver 分发只判 0/1/2，**无 `else` 分支**；而唯一推进子步时钟的 `current_sub_time = current_sub_time + sub_timestep_splitting` **只存在于三个求解器内部**（`:415`/`:482`/`:634`）⇒ 越界值时时钟不前进，外层 `do while (current_sub_time .lt. final_sub_time)` 永不退出。**实测**：同模板同时长（0.01h），`dynamic_solver=2` → 0.26s 跑完、日志 5 条 `Progress`；`dynamic_solver=5` → **60s 被强杀（exit 124）、日志停在 `Calculation in progress...`、0 条 `Progress`**。GUI 数字框给的是 0–9 ⇒ 用户可直接踩中。**同类越界语义**：`redistribution_method` 7–9 命中 `CASE DEFAULT` 只打印提示、**静默不重分配**；`kind_composition` 2–9 两个分支都不进 ⇒ **`frac_bound` 已 `allocate` 却未初始化**（读未初始化内存） |
+| 24 | 🔴 P1 | 运行/健壮性 | ✅ **已修复（2026-09-23）** | 见上方「2026-09-23」章节 §2 与 §5：① `validate()` 前置闸门；② 控件范围由 0–9 收窄为 **0–2**，标签改为「时间积分求解器」并加说明 tooltip。原始记录如下：**方法号越界导致核心死循环挂住**：`ModuleAdaptstep.f90:86-100` 的 solver 分发只判 0/1/2，**无 `else` 分支**；而唯一推进子步时钟的 `current_sub_time = current_sub_time + sub_timestep_splitting` **只存在于三个求解器内部**（`:415`/`:482`/`:634`）⇒ 越界值时时钟不前进，外层 `do while (current_sub_time .lt. final_sub_time)` 永不退出。**实测**：同模板同时长（0.01h），`dynamic_solver=2` → 0.26s 跑完、日志 5 条 `Progress`；`dynamic_solver=5` → **60s 被强杀（exit 124）、日志停在 `Calculation in progress...`、0 条 `Progress`**。GUI 数字框给的是 0–9 ⇒ 用户可直接踩中。**同类越界语义**：`redistribution_method` 7–9 命中 `CASE DEFAULT` 只打印提示、**静默不重分配**；`kind_composition` 2–9 两个分支都不进 ⇒ **`frac_bound` 已 `allocate` 却未初始化**（读未初始化内存） |
 | 25 | 🟠 P1 | 运行/配置 | ❌ 未修（2026-09-14 新发现，与 #12/#15/#20 同类） | GUI「最小时间步 (秒)」`dtmin` 是**死标签**：全核心 3 处命中 —— `ModuleAdaptstep.f90:293` 的**注释**、`ModuleDiscretization.f90:101` 的**读取**、`ModuleInitialization.f90:105` 的**声明**，**0 处使用**。注释称 DTMIN/DTMAX「defined in time.inc」，但 **`time.inc` 在本仓库不存在**、也没有任何 `INCLUDE 'time.inc'` 语句；`adaptime` 计算新步长处（`T_dt = T_dt*DSQRT(EPSER/n2err)`，`:300`）**没有任何上下限钳制** ⇒ 注释里承诺的「keep new time step between DTMIN and DTMAX」从未实现。**含义**：界面上的「最小时间步」改任何值都不影响结果，且自适应步长实际没有下限保护。**发现方式**：由新增的 `scripts/check_field_registry.py`（字段登记表对账）自动报出 —— 该脚本对每个字段核对「核心是否读 / 读后是否用」，排除了声明行、注释行与读取语句本身 |
 | 26 | 🟠 P1 | 运行/对比功能 | ❌ 未修（2026-09-14 新发现） | **界面「比较 internal / external」在两臂上同时改了「表示能力」和「初始态」**：`_with_mixing_assumption` 的 INTERNAL 分支把 `tag_external` 强制为 0（`run_service.py:336`），而 EXTERNAL 分支**保留原值**（`:349`）。实测同一份配置做两臂变换：**出厂模板**（`tag_external=0`）→ 两臂只差 `n_frac`(1↔3) 与 `fraction_bounds`，对比干净；**用户载入的配置**（如 `zero_initial_mass_test.cfg`，`tag_external=1`）→ 两臂差 **3 项**：`n_frac`(1↔3)、**`tag_external`(0↔1)**、`fraction_bounds`。⇒ 后者的结果差异**不能只归因于内混/外混表示能力**，初始态也变了。附带：用户在结构编辑页设的 `n_frac` 与 fraction 表在两臂中都被静默改写（与 #23 同类）；比较运行只归档一份 `experiment_config.cfg`，而两臂各跑一份不同的 cfg（#22 的对比场景特例）。**2026-09-14 补充（自我更正）**：实测 `tag_init` **两臂始终相同**（按钮从不碰它）；且「内混臂强制 `tag_external=0`」**很可能不可避免** —— `n_frac=1` 时组成只有 1 段，「初始外混」在语义上无处安放；核心也正是这样用的（`ModuleDiscretization.f90:656` 专门处理 `tag_external=0 .and. N_frac.gt.1` 这一组合）⇒ **「是否算缺陷」需重新定性**，真正站得住的问题也许只是「界面没告诉用户两臂差异里包含初始态」 |
-| 27 | 🟠 P1 | 运行/健壮性 | ❌ 未修（2026-09-14 新发现） | **案例名含非 ASCII 字符时，结果 CSV 的编码不一致会让程序崩溃**：核心自带的结果写出（`SRC/ModuleCoeffRepartitionBoxmodel.f90:223`/`:1405` 写 `csv/timestep_summary.csv`，其中的 `testcase`/`process_combo` 取自环境变量 `SCRAM_TESTCASE`/`SCRAM_PROCESS_COMBO`）在 Windows 上按 **ANSI 码页（GBK）** 落盘，而 `run_service.summarize_run`（`:221`）用 `timestep_path.open()` **按 UTF-8** 读回 ⇒ `UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc1 in position 289` 崩溃。**实测**：案例名传 `"零质量 + NEAREST"` → 崩溃；换 ASCII 标签 → 正常。**触发面**：GUI 默认流程的 `case_name` 取自案例预设（ASCII），故当前不会踩到；但任何把非 ASCII 作为 `case_name` 传入 `prepare_run` 的调用（如我们的探测脚本）都会崩。**另一层隐患**：路径本身也会含中文（结果目录用「实验名_案例预设」命名），核心能否打开中文路径未验证 |
+| 27 | 🟠 P1 | 运行/健壮性 | ✅ **已修复（2026-09-23）** | 见上方「2026-09-23」章节 §1。`run_service.py` 6 处 CSV 读写显式编码，核心仍按 ANSI 写盘、Python 侧按 UTF-8 容错读入，不再崩溃。**原始记录**：核心自带的结果写出（`SRC/ModuleCoeffRepartitionBoxmodel.f90:223`/`:1405` 写 `csv/timestep_summary.csv`，其中的 `testcase`/`process_combo` 取自环境变量 `SCRAM_TESTCASE`/`SCRAM_PROCESS_COMBO`）在 Windows 上按 **ANSI 码页（GBK）** 落盘，而 `run_service.summarize_run`（`:221`）用 `timestep_path.open()` **按 UTF-8** 读回 ⇒ `UnicodeDecodeError` 崩溃。**实测**：案例名传 `"零质量 + NEAREST"` → 崩溃；换 ASCII 标签 → 正常。**触发面**：GUI 默认流程的 `case_name` 取自案例预设（ASCII），故当前不会踩到；但任何把非 ASCII 作为 `case_name` 传入 `prepare_run` 的调用都会崩。**另一层隐患**：路径本身也会含中文（结果目录用「实验名_案例预设」命名），核心能否打开中文路径未验证 |
 | 28 | 🔴 P1 | 初始化（**上游设计洞**） | ❌ 未修（2026-09-20 升级 1.2 时发现） | **`nucl_model=5` 时内核消费从未初始化的 `init_bin_number`**（详见上方 2026-09-20 章节 §4）：消费点 `ModuleDiscretization.f90:668-678`（**1.1 就有**），而 `:131` 只 `allocate`、`:145` 的读取被 `if(nucl_model.ne.5)` 跳过 ⇒ 读未初始化内存；1.2 在 `ModuleRedistribution.f90:127-136` 新增的不变量把它暴露为 `error stop 'SCRAM1.2: orphan mass/number before remap'`。实测触发点 `f=1, k=7`：有完整 30 物种质量 `1.2603962185956201` 而 `number=0`。**含义：1.1 时代这两个模板外混臂的数值建立在未初始化内存上，不可信** |
 | 29 | 🔴 P1 | 初始化（**上游缺陷**） | ❌ 未修（2026-09-21 新发现） | **nl=5 多列分支重复投放**（详见下方 2026-09-21 章节 §3）：`ModuleDiscretization.f90:584-596` 两个判定条件不对称——`comp(k,f,1,2)==1`（硫酸盐）命中 **1 列**，`comp(k,f,1,1)==0`（黑碳）命中 **11 列**（`n_frac=5` 时 35 列）⇒ 同一份 `mass_init(k)/2` 被写 12/36 份，组成重分布再按"组成相同"累加合并。实测：内混臂 `37.679073599845388` vs 外混臂 `226.07444159907240`（= 12 × Σmass_init/2，**6 倍**）、`n_frac=5` 时 `678.22332479721695`（**18 倍**）；两臂终态粒子数比 **6.0000**（本模板未开凝并 ⇒ 差异全部来自初值）。**含义：外混臂初值不是"论文 hazy 场景"（硫酸盐:黑碳 = 1:1 vs 1:11），其数字一律作废** |
 
 ## Bug 总览
+
+> **2026-09-23 状态提示**：本表的"简要描述 / 修改文件 / Git 提交备注"三列是对**原始缺陷**的登记，
+> 其中 **#19、#22、#27 已修复**、**#24 已加运行前闸门**（状态以「修复状态」表与上方「2026-09-23」章节为准）。
+> 未同步改写本表，是为了保留原始登记的措辞，避免抹掉"当初是怎么描述的"这一层信息。
 
 | # | 严重性 | 类别 | 简要描述 | 触发条件 | 修改文件 | Git 提交备注 |
 |---|--------|------|---------|---------|---------|------------|
