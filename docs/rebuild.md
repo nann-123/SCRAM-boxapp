@@ -229,7 +229,13 @@ python scripts/check_init_fix_linux.py --hours 1 --zero-mass \
 ## 9. 观察项（不参与判定，供台账）
 
 1. **`T7` 本次没有异常退出**：退出码 0，正常跑完。`docs/0929linux.md` 记录的是"旧核上初始化后异常退出"，本机在 1.2 修复版上看不到该现象。它的 Nub Nucl/Coag 仍是 ±1.38e14 的巨量近抵消，但同样量级也出现在 T4/T5/T6，而 T4/T6 与改前**逐位一致** ⇒ 属 `baseline12h.cfg` 这条 `nl=1` 全过程的既有行为，与本次三处改动无关。
-2. **GUI 暂存副本仍是改动前的构建**：`~/.local/state/scram_boxapp_mixing/runtime/linux/ProgramSCRAM` 的 md5 是 `a60700a9…`，与 §5 编出的 **pre** 二进制完全相同（mtime 仍为 9-20 16:14）。版本自检看不出这一层——1.2 的字符串标记在 0929 修复之前就已存在，所以它对 staged 也报 `1.2`。按 `docs/0929linux.md` §2 的条件（"仍显示旧版且角色是 staged"）本次**未删除**；构建脚本说明 GUI 检测到共享运行时变化会自动重新暂存。若需强制刷新：`rm -rf ~/.local/state/scram_boxapp_mixing/runtime/linux`。
+2. **GUI 暂存副本曾是改动前的构建 → 已于本批后续刷新**：收尾核对时 `~/.local/state/scram_boxapp_mixing/runtime/linux/ProgramSCRAM`
+   的 md5 还是 `a60700a9…`（与 §5 编出的 **pre** 二进制完全相同，mtime 仍是 9-20 16:14），版本自检看不出这一层 ——
+   1.2 的字符串标记在 0929 修复之前就已存在，所以它对 staged 也报 `1.2`。
+   **刷新方式**：走应用自己的暂存路径（实例化 `app.services.run_service.RunService`，其构造函数即调用 `_stage_runtime_tree()`，
+   与 GUI 启动同一入口）—— 它比对清单里的 `executable_sha256`，发现与共享运行时不一致后整目录重拷。
+   **结果**：刷新后 staged 的 md5 = `796dfbbf50bd24685b9306d376538325`（sha256 `930a1b88…`）与 shared 一致，
+   故**不需要** `rm -rf ~/.local/state/scram_boxapp_mixing/runtime/linux`；这也实证了"GUI 检测到共享运行时变化会自动重新暂存"。
 3. `T1`–`T3` 是"官方雾霾模板 × 三个混合臂"（298 K / 101325 Pa / RH 0.7、仅冷凝）⇒ `Mass Cond` 非零、`Nub Nucl/Coag` 为 0，与配置一致。
 
 ---
@@ -270,9 +276,10 @@ python scripts/check_init_fix_linux.py --hours 1 --zero-mass \
 ### 还差一步才算完全落地
 
 1. ~~把重建的二进制提交上去~~ —— **已完成**：本批单笔提交已含 md5 `796dfbbf…` 的 Linux 核。
-2. **让 GUI 用上新核**：暂存副本（`~/.local/state/scram_boxapp_mixing/runtime/linux/ProgramSCRAM`）若仍是改前的
-   `a60700a9…`，按 §9 第 2 条的说明由 GUI 自动重新暂存；不确定时直接
-   `rm -rf ~/.local/state/scram_boxapp_mixing/runtime/linux`，启动后确认该文件 md5 变成 `796dfbbf…`。
+2. ~~让 GUI 用上新核~~ —— **已完成**（本文 §9 第 2 条）：暂存副本原先仍是改前的 `a60700a9…`，
+   经应用自身的自动暂存路径刷新后，staged 与 shared 的 md5 均为 `796dfbbf…`（`check_runtime_version.py` 两处同值、退出码 0），
+   **未使用** `rm -rf` 兜底。若要再验一遍，启动 GUI 后确认该文件 md5 仍是 `796dfbbf…` 即可。
+   （本条的完成状态与证据为 **Linux 侧复核时补记**。）
 
 ### 顺带修掉的三处（与判定无关）
 
