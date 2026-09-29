@@ -380,6 +380,13 @@ core\executables_or_wrappers\runtime\windows\
 
 覆盖后必须重新运行标准测试。
 
+> **内核修改流程（2026-09-29 起）**：`source\SCRAM1.2\` 下的 Fortran 源码（`SRC\*.f90`、`SConstruct`）
+> 经确认后**可以直接修改**。推荐顺序：**先在 Linux 侧改 + 重编译 + 按 `docs/0929linux.md` 跑验证**
+> （改动说明写进 `docs/0929check.md`，可直接转给核心维护者），
+> 通过后再重编译 Windows 核并覆盖 `runtime\windows\ProgramSCRAM.exe` 与 GUI 暂存副本，最后用
+> `scripts/check_runtime_version.py`（期望出现 1.2 标记）与 `scripts/run_standard_tests.py` 收口。
+> 改了 `.f90` 而不重编译＝源码与成品静默不一致（BUG_TRACKING #9 的教训）；1.2 生效后 1.1 时代数值基线作废。
+
 ### 在 Linux 上重新编译（可选，用于在 Linux 机器上直接调试模型）
 
 本仓库同时带有一个 Linux 原生核心，编译并安装只需一条命令：
@@ -387,6 +394,7 @@ core\executables_or_wrappers\runtime\windows\
 ```bash
 cd SCRAMBoxApp-WinDevKit
 bash scripts/linux/build_runtime.sh        # 加 "debug" 可得 -O0 -g -fcheck=bounds -fbacktrace
+                                           # 加 "poison" 可把未初始化实数变成 NaN（查未初始化读）
 .venv/bin/python scripts/launch_app.py     # 启动 GUI
 ```
 
@@ -395,6 +403,8 @@ bash scripts/linux/build_runtime.sh        # 加 "debug" 可得 -O0 -g -fcheck=b
 - 产物安装到 `core/executables_or_wrappers/runtime/linux/`，GUI 会按当前平台自动选用
   （解析顺序见 `docs/shared_runtime_layout.md`）。
 - 改完 `SRC/*.f90` 后重跑该脚本即可，之后应重新运行标准测试。
+- 内核改动后的验证指引见 `docs/0929linux.md`（Linux 操作清单）、改动说明见 `docs/0929check.md`
+  （给核心维护者），测试配置用 `scripts/make_init_test_cases.py` 生成。
 - 手动运行时需要在工作目录下先建好 `RESULT/`（GUI 会自动创建）。
 - 细节与构建依赖版本见 `core/executables_or_wrappers/runtime/linux/README.md`。
 > 注意：该 Linux 工具链随仓库提供，**不包含在本开发包内**（本包只带 Windows 运行时与源码）。

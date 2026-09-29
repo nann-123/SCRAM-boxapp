@@ -130,6 +130,10 @@ MODULE Discretization
     allocate(init_bin_emission(N_sizebin,N_species))
     allocate(init_bin_number(N_sizebin))
     init_bin_emission=0.d0
+    ! SCRAM1.2: init_bin_mass is read in only when Tag_init=1 and init_bin_number
+    ! only when nucl_model/=5; zero both so every other mode reads a defined value.
+    init_bin_mass=0.d0
+    init_bin_number=0.d0
     do s= 1, N_species!read initial information of each species, one species one line
       if(Tag_init.eq.0) then
 	      read(10,*) List_species(s),Index_groups(s),gas_init(s),gas_emis(s),init_mass(s)
@@ -589,7 +593,11 @@ MODULE Discretization
 		  concentration_mass(j,ESO4)=mass_init(k)/2.d0
 		  concentration_number(j)=number_init(k)/2.d0
 	      endif
-	      if(discretization_composition(k, f, 1,1).eq.0.d0) then
+	      ! SCRAM1.2: BC occupies its own column (group 4 top fraction = 1),
+	      ! symmetric with the SO4 test above. The previous group-1
+	      ! lower-bound test matched 11 columns (35 at N_frac=5) and inflated
+	      ! the initial mass by 6x (18x).
+	      if(discretization_composition(k, f, 4,2).eq.1.d0) then
 		  concentration_mass(j,EBC)=mass_init(k)/2.d0
 		  concentration_number(j)=number_init(k)/2.d0
 	      endif
@@ -666,7 +674,9 @@ MODULE Discretization
   endif
   endif
 
-  if(tag_external.eq.0.and.N_frac.gt.1) then!incase of internal mixed initial condition
+  ! SCRAM1.2: this block reads per-bin mass/number that are only defined for
+  ! Tag_init=1 and nucl_model/=5; skip it otherwise instead of reading garbage.
+  if(tag_external.eq.0.and.N_frac.gt.1.and.nucl_model.ne.5.and.Tag_init.eq.1) then!incase of internal mixed initial condition
     do k=1,N_sizebin
 	  do s=1, N_species!index of species
 	    jesp=List_species(s)

@@ -230,7 +230,9 @@ Linux debugging workflow is ever revived.
 
 | Script | Purpose | When |
 |---|---|---|
-| `scripts/linux/build_runtime.sh [safe\|debug]` | Build the Linux core from `source/SCRAM1.2` (`FC=gfortran CC=gcc scons mode=<mode>`) and install it into `runtime/linux/` | after touching Fortran code |
+| `scripts/linux/build_runtime.sh [safe\|debug\|poison]` | Build the Linux core from `source/SCRAM1.2` (`FC=gfortran CC=gcc scons mode=<mode>`) and install it into `runtime/linux/`. `poison` = same optimization as `safe` plus `-finit-real=snan`, so stale reads of uninitialized reals trip the core's finiteness checks | after touching Fortran code |
+| `scripts/make_init_test_cases.py` | Generate the initialization/mixing test matrix (internal vs external, `nucl_model=5`, `Tag_init=0/1`) into the git-ignored `install_logs/` | before kernel verification runs ([docs/0929linux.md](docs/0929linux.md)) |
+| `scripts/check_init_fix_linux.py` | Run that matrix and assert the 0929 initialization gates (A1–A6), writing `install_logs/20260929_runs/result.json`; exit code 0 = all pass | Linux kernel verification ([docs/0929linux.md](docs/0929linux.md) §5) |
 
 > **Removed 2026-09-20.** The automated troubleshooting toolchain — `auto_round.sh`,
 > `collect_metrics.py`, `probe_cell.py`, `probe_suggest.py`, `noop_probe.py`,
@@ -243,10 +245,25 @@ Linux debugging workflow is ever revived.
 
 **Non-conflict rules** (originally enforced by `scripts/linux/check_windows_parity.sh`, now retired):
 
-1. Never modify `core/executables_or_wrappers/runtime/windows/**` or the two Windows packaging
-   scripts from the Linux side.
+1. Never modify the **Windows runtime binaries** (`core/executables_or_wrappers/runtime/windows/**/*.exe`
+   and its DLLs) or the two Windows packaging scripts from the Linux side. The shared Fortran **source**
+   (`core/executables_or_wrappers/runtime/windows/source/SCRAM1.2/**`) may be edited from either side —
+   see the kernel-change workflow below.
 2. Keep the Windows branch in shared source — e.g. `coeff_make_dir` keeps `cmd /c ... mkdir`.
 3. Linux-generated screenshots are review copies only; release screenshots are regenerated on Windows.
+
+**Kernel change workflow (2026-09-29).** Editing the core is allowed — it just has to be verified before
+it reaches users:
+
+1. Edit `.f90` / `SConstruct` under `source/SCRAM1.2/`, record the change in `docs/BUG_TRACKING.md`, and write the
+   note for the core maintainer in `docs/0929check.md` (what changed / why / which problem).
+2. On Linux: `bash scripts/linux/build_runtime.sh safe`, then run the assertion list in
+   [docs/0929linux.md](docs/0929linux.md) (test cases come from `scripts/make_init_test_cases.py`).
+3. Only then rebuild on Windows (devkit README §9), overwrite `runtime/windows/ProgramSCRAM.exe` **and**
+   the GUI's staged copy, and gate the release with `scripts/check_runtime_version.py`
+   (1.1 → 1.2) plus `scripts/run_standard_tests.py`.
+4. Touching `.f90` without rebuilding means the shipped binary silently disagrees with the source
+   (the lesson behind BUG_TRACKING #9). Note that a 1.2 core invalidates the 1.1-era numeric baselines.
 4. Version bumps and Windows checklist items are proposals until verified on Windows.
 
 ## GUI workflow

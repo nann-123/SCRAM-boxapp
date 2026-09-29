@@ -3,10 +3,13 @@
 # Build the Linux-native ProgramSCRAM and install it into the shared runtime
 # tree so the GUI can run SCRAM jobs on this machine.
 #
-#   bash scripts/linux/build_runtime.sh [safe|debug]
+#   bash scripts/linux/build_runtime.sh [safe|debug|poison]
 #
 # "debug" builds with -O0 -g -fcheck=bounds -fbacktrace (useful when debugging
 # the Fortran core); the default "safe" mode is what the shipped runtime uses.
+# "poison" keeps the safe optimization but initializes uninitialized reals to
+# signaling NaN, so stale reads trip the core's finiteness checks instead of
+# passing silently (see docs/0929linux.md).
 #
 # See README.md ("Install on Linux") and
 # core/executables_or_wrappers/runtime/linux/README.md for background.

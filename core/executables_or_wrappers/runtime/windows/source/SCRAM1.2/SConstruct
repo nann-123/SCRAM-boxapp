@@ -14,6 +14,11 @@ fortran_linker = fortran_compiler
 safe_fp_flags = " -O2 -ffree-line-length-none -fno-fast-math -ffp-contract=off -frounding-math -fbacktrace " \
                 "-finit-integer=0 "
 debug_flags   = " -O0 -g -ffree-line-length-none -fcheck=bounds -fbacktrace -finit-integer=0 "
+# "poison" is a diagnostic mode for hunting uninitialized reads: uninitialized
+# reals become signaling NaNs, so a stale read trips the SCRAM1.2 finiteness
+# checks instead of passing silently. Same optimization as "safe" so the
+# numbers stay comparable.
+poison_flags  = safe_fp_flags + " -finit-real=snan "
 
 #
 # Paths
@@ -33,6 +38,8 @@ mode = ARGUMENTS.get("mode", "safe")
 flags = safe_fp_flags
 if mode == "debug":
     flags = debug_flags
+elif mode == "poison":
+    flags = poison_flags
 print("Build mode:", mode)
 # Whether to see compilation lines or prettier string.
 # if not ARGUMENTS.has_key("line"):
