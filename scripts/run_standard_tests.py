@@ -36,9 +36,21 @@ def run_import_smoke() -> None:
     from app.config_binding.config_model import ConfigModel
     from app.services.run_service import RunService
 
-    config = ConfigModel(ROOT).new_default()
-    errors = ConfigModel(ROOT).validate(config)
-    _assert(not errors, "default config validation failed: " + "; ".join(errors))
+    model = ConfigModel(ROOT)
+    # U-06 护栏（2026-09-29）：default_config.cfg 是零质量骨架（tag_init=1、逐档质量全 0、
+    # 粒子数非 0 —— "有数量、没质量"的未定义输入），护栏必须拦下它。
+    # GUI 的「新建实验」走的是 gmd_paris_full 模板、不经过这里，所以这条断言只约束数据层。
+    skeleton_errors = model.validate(model.new_default())
+    _assert(
+        len(skeleton_errors) == 1 and "initial mass is all 0" in skeleton_errors[0],
+        "zero-mass skeleton should be rejected by exactly the U-06 guard, got: " + "; ".join(skeleton_errors),
+    )
+    from app.services.template_service import TemplateService
+
+    for template in TemplateService(ROOT).list_templates():
+        template_id = str(template["id"])
+        template_errors = model.validate(TemplateService(ROOT).load_template(template_id))
+        _assert(not template_errors, f"factory template {template_id} validation failed: " + "; ".join(template_errors))
     _assert(RunService(ROOT).executable_available(), "ProgramSCRAM executable is not available")
     print("import_smoke: ok")
 

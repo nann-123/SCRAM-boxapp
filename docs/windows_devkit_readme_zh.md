@@ -393,6 +393,24 @@ core\executables_or_wrappers\runtime\windows\
 > `scripts/check_runtime_version.py`（期望出现 1.2 标记）与 `scripts/run_standard_tests.py` 收口。
 > 改了 `.f90` 而不重编译＝源码与成品静默不一致（BUG_TRACKING #9 的教训）；1.2 生效后 1.1 时代数值基线作废。
 
+> **Windows 重编译实操（2026-09-29 实测通过）**：本机已配好 MSYS2（`E:\yifeihu	ools\msys64`），一条命令即可：
+>
+> ```bash
+> E:/yifeihu/tools/msys64/usr/bin/bash.exe -lc 'cd /e/yifeihu/research/models/scram-box/SCRAMBoxApp-WinDevKit/core/executables_or_wrappers/runtime/windows/source/SCRAM1.2 && scons -j8'
+> ```
+>
+> 之后把 `source\SCRAM1.2\ProgramSCRAM.exe` 覆盖到 `runtime\windows\`，并删除
+> `%LOCALAPPDATA%\scram_boxapp_mixinguntime` 强制重新暂存，最后跑
+> `scripts\check_runtime_version.py`（期望 1.2）+ `scriptsun_standard_tests.py --require-core-1.2`。
+>
+> **两个必须知道的坑（本次踩过）**：
+> 1. **栈保留**：`SConstruct` 已加 `-Wl,--stack,16777216`（仅 win32/cygwin 生效）。Windows PE 默认栈只有 2 MB，
+>    `-O2` 内联后初始化阶段会**段错误**（`exit 139`、日志为空）；同源码 `-O0`(debug) 却能跑完，是最容易被误判成"代码 bug"的假象。
+> 2. **DLL 闭包**：MSYS2 编出的 exe 依赖 40+ 个 mingw64 DLL（`libnetcdff-7`、`libhdf5-320`、`libcurl-4`、
+>    `libaws-*`、`libstdc++-6` …）。必须把依赖闭包全部拷进 `runtime\windows\`（与 exe 同目录），
+>    否则脱离 MSYS2 环境启动即 `exit 127` / 无输出。`ldd` 的 `=>` 第三列是要拷的路径；
+>    同名 DLL 用 `/mingw64/bin` 里的版本覆盖旧的（本次刷新 46 个）。
+
 ### 在 Linux 上重新编译（可选，用于在 Linux 机器上直接调试模型）
 
 本仓库同时带有一个 Linux 原生核心，编译并安装只需一条命令：

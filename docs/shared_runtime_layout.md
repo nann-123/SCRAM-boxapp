@@ -38,6 +38,12 @@ The GUI runs from the selected platform venv once it exists.
 
 Each platform runtime folder can carry a copy of the upstream SCRAM source tree under `source/` so the native `ProgramSCRAM` can be rebuilt if the shipped binary cannot run on a target system.
 
+**Windows runtime DLL closure (2026-09-29)**: the MSYS2-built 1.2 `ProgramSCRAM.exe` links against 40+ mingw64
+runtime libraries (`libnetcdff-7`, `libnetcdf`, `libhdf5-320`, `libcurl-4`, `libaws-*`, `libstdc++-6`,
+`libgfortran-5`, …). They are staged **next to the executable** (85 DLLs in `runtime/windows/`) so the runtime
+is self-contained — the app copies the whole folder, and the packaged build ships it as-is. If you rebuild the
+core, refresh the whole closure (`ldd`), not just `ProgramSCRAM.exe`.
+
 Only the required SCRAM source and asset files are packaged into that `source/` tree:
 
 - `README`

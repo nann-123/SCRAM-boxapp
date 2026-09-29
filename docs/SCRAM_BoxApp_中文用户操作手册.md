@@ -92,7 +92,7 @@ SCRAM 的全称是 **Size-Composition-Resolved Aerosol Model**，意思是“按
 - **载入模板**：把所选模板写入界面。
 - **模板说明**：解释该模板对应的论文场景。
 - **案例预设**：决定物理过程组合和推荐模拟时长。场景 D 应选择 `gmd_paris_full`。
-- **混合假设**：选择 `INTERNAL_MIXING` 或 `EXTERNAL_MIXING`。
+- **混合假设**：选择 `INTERNAL_MIXING` 或 `EXTERNAL_MIXING`。载入配置文件时按 `n_frac` 自动推断初值（`n_frac=1` 判为内混，否则外混），可手动切换；切换后预览框显示程序实际送核的配置（含被改写的 `n_frac`、`fraction_bounds` 等项）。比较运行固定跑内/外两臂，与本项无关。
 
 ### 过程开关与混合假设说明
 
@@ -104,7 +104,7 @@ SCRAM 的全称是 **Size-Composition-Resolved Aerosol Model**，意思是“按
 ### 运行与输出
 
 - **模拟时长（小时）**：总模拟时间。论文 Greater Paris 案例使用 12 小时。
-- **最小时间步（秒）**：积分器允许使用的最小时间步。
+- **最小时间步（秒）**：**死控件（已置灰）**——内核读入该值但从不使用（注释承诺的最小/最大步长钳制从未实现），改动不影响任何结果。
 - **输出目录**：运行结果、CSV、日志和图像保存位置。
 
 ### 环境与初始状态
@@ -210,10 +210,10 @@ external mixing 的状态变量更多，所以通常比 internal mixing 慢。�
 
 | 混合假设 | 终态质量 | 终态数量 | 运行时间 | 步数 |
 | --- | ---: | ---: | ---: | ---: |
-| INTERNAL_MIXING | 32.7327 | 1.0240e10 | 1.66 s | 88 |
-| EXTERNAL_MIXING | 33.8691 | 1.1436e10 | 22.88 s | 382 |
+| INTERNAL_MIXING | 32.6689 | 1.0017e10 | 2.7 s | 110 |
+| EXTERNAL_MIXING | 32.8744 | 9.9052e9 | 31.1 s | 743 |
 
-internal 相对 external 的终态质量差约为 `-3.36%`，终态数量差约为 `-10.46%`。这说明两种假设的总量级一致，但 external mixing 在组成和混合状态层面提供了更多信息。
+internal 相对 external 的终态质量差约为 `-0.63%`，终态数量差约为 `+1.13%`。这说明两种假设的总量级一致，但 external mixing 在组成和混合状态层面提供了更多信息。
 
 ## 报告导出页
 
@@ -305,7 +305,7 @@ internal 相对 external 的终态质量差约为 `-3.36%`，终态数量差约�
 
 ![总质量曲线](user_manual_zh_assets/figures/gmd_paris_full_total_mass.png)
 
-图中横轴是时间，单位为秒；纵轴是总质量。internal 和 external 的总质量在同一量级，说明两种假设下宏观质量演化相近。终态 external 略高，本次标准运行约为 `33.8691`，internal 约为 `32.7327`。
+图中横轴是时间，单位为秒；纵轴是总质量。internal 和 external 的总质量在同一量级，说明两种假设下宏观质量演化相近。终态 external 略高，本次标准运行（SCRAM1.2，2026-09-29）约为 `32.8744`，internal 约为 `32.6689`；运行时间为开发机实测，仅作量级参考。
 
 ### 正确结果图：总数量
 

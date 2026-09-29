@@ -233,6 +233,7 @@ Linux debugging workflow is ever revived.
 | `scripts/linux/build_runtime.sh [safe\|debug\|poison]` | Build the Linux core from `source/SCRAM1.2` (`FC=gfortran CC=gcc scons mode=<mode>`) and install it into `runtime/linux/`. `poison` = same optimization as `safe` plus `-finit-real=snan`, so stale reads of uninitialized reals trip the core's finiteness checks | after touching Fortran code |
 | `scripts/make_init_test_cases.py` | Generate the initialization/mixing test matrix (internal vs external, `nucl_model=5`, `Tag_init=0/1`) into the git-ignored `install_logs/` | before kernel verification runs ([docs/0929linux.md](docs/0929linux.md)) |
 | `scripts/check_init_fix_linux.py` | Run that matrix and assert the 0929 initialization gates (A1–A6), writing `install_logs/20260929_runs/result.json`; exit code 0 = all pass | Linux kernel verification ([docs/0929linux.md](docs/0929linux.md) §5) |
+| `scripts/check_remaining_items.py` | Probes for the remaining **app-layer** items (mixing assumption, mapping scheme, zero-mass guard, layout guard, dtmin control, scenario linkage, arm diff, ASCII paths): each probe is a "must hold after the fix" assertion — FAIL today is the pre-fix evidence, PASS after the fix is the acceptance. No kernel rebuild needed; writes `install_logs/20260929_remaining/result.json` | before/after fixing any app-layer item |
 
 > **Removed 2026-09-20.** The automated troubleshooting toolchain — `auto_round.sh`,
 > `collect_metrics.py`, `probe_cell.py`, `probe_suggest.py`, `noop_probe.py`,

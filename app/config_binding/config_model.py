@@ -164,12 +164,27 @@ class ConfigModel:
         data["scalars"]["n_frac"] = int(_tokens(lines[diameter_line + 2])[0])
         data["scalars"].setdefault("redistribution_option", REMAP_MODE_DUALPIVOT)
         data["fraction_bounds"] = [float(value) for value in _tokens(lines[diameter_line + 3])]
+        # U-01 修复（2026-09-29）：按 n_frac 反推混合假设 —— n_frac=1 就是内混表示，
+        # n_frac>1 就是外混表示。原来写死 EXTERNAL_MIXING，导致载入内混 cfg 也按外混跑。
+        # 界面仍允许手动切换（预览会显示改写结果），这里只是载入时的初始值。
+        data["mixing_assumption"] = (
+            "INTERNAL_MIXING" if int(data["scalars"].get("n_frac", 1)) == 1 else "EXTERNAL_MIXING"
+        )
         return data
 
     def new_default(self) -> dict[str, Any]:
         return self.parse(self.default_path)
 
     def serialize(self, data: dict[str, Any], target: Path) -> Path:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.serialize_text(data), encoding="utf-8")
+        return target
+
+    def serialize_text(self, data: dict[str, Any]) -> str:
+        """U-18 配套：把配置渲染成 cfg 文本（不落盘），供预览与 serialize 共用同一条渲染路径。"""
+        return "\n".join(self._serialize_lines(data)) + "\n"
+
+    def _serialize_lines(self, data: dict[str, Any]) -> list[str]:
         normalized = self.normalize(data)
         scalars = normalized["scalars"]
         lines = [
@@ -194,8 +209,17 @@ class ConfigModel:
             _format_line([scalars["n_species"], scalars["tag_init"]], "## number of species and initialization mode"),
         ]
 
+        tag_init = int(scalars.get("tag_init", 1))
         for idx, record in enumerate(normalized["species_records"]):
             comment = self._species_comment(record, idx)
+            # U-03（2026-09-29）：tag_init=0 时内核只读 5 列短格式（物种名 组号 气相 排放 物种总质量），
+            # 写入器必须同步发短行 —— 单值取逐档质量之和，保持"物种总质量"语义（T5/T7 同格式）。
+            # tag_init=1 写全长逐档质量，维持既有行为。
+            row_values = (
+                [self._format_scalar(value, "float") for value in record["bin_values"]]
+                if tag_init == 1
+                else [self._format_scalar(sum(float(v) for v in record["bin_values"]), "float")]
+            )
             lines.append(
                 _format_line(
                     [
@@ -203,7 +227,7 @@ class ConfigModel:
                         record["group_id"],
                         self._format_scalar(record["init_gas"], "float"),
                         self._format_scalar(record["emission"], "float"),
-                        *[self._format_scalar(value, "float") for value in record["bin_values"]],
+                        *row_values,
                     ],
                     comment,
                 )
@@ -228,10 +252,7 @@ class ConfigModel:
         lines.append(_format_line([scalars["kind_composition"]], "## composition discretization mode"))
         lines.append(_format_line([scalars["n_frac"]], "## fraction sections"))
         lines.append(_format_line([self._format_scalar(value, "float") for value in normalized["fraction_bounds"]], "## fraction bounds"))
-
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return target
+        return lines
 
     def normalize(self, data: dict[str, Any]) -> dict[str, Any]:
         normalized = {
@@ -370,6 +391,64 @@ class ConfigModel:
                     "any other value makes the core loop forever without advancing the "
                     "sub-step clock (Bug #24)"
                 )
+        errors.extend(self._domain_guards(normalized, n_frac))
+        return errors
+
+    def _domain_guards(self, normalized: dict[str, Any], n_frac: int) -> list[str]:
+        """输入域护栏（2026-09-29 批次）：零质量、nl5 布局、旧核未定义组合。
+
+        三条都是"配置之间互相矛盾/内核未定义"的检查，与 Bug #24 闸门同性质：
+        在运行前拦下并给人能读懂的原因，而不是让内核静默算错。
+        """
+        errors: list[str] = []
+        scalars = normalized["scalars"]
+        tag_init = int(scalars.get("tag_init", 1))
+
+        # U-06a（#1/#2/#5/#13）：逐档质量全 0 而粒子数非 0 —— "有数量、没质量"在模型语义里
+        # 从未被定义过（1.2 复验不再崩，但结果无意义）。只在 tag_init=1（质量来自 cfg）时检查。
+        if tag_init == 1:
+            total_mass = sum(sum(record["bin_values"]) for record in normalized["species_records"])
+            total_number = sum(float(value) for value in normalized["init_bin_number"])
+            if total_mass == 0.0 and total_number > 0.0:
+                errors.append(
+                    "initial mass is all 0 while initial number is non-zero (tag_init=1): "
+                    "'number without mass' is undefined in this model (U-06 / #1/#2/#5/#13); "
+                    "provide non-zero per-bin masses, or set tag_init=0 to use the built-in "
+                    "scenario distributions"
+                )
+
+        # U-07（P-02）：论文验证模式把 EBC/ESO4 钉死在 2/4 号物种槽（INC/pointer.inc 编译期常量，
+        # 内核只认槽号、不认布局）。布局不对时静默失效：初始总质量只剩一半、硫酸源进不来、
+        # 冷凝全程空转。名称匹配放宽到 black/bc、so4/sulfat（"BlackCarbon" 不含字面 "BC"）。
+        if int(scalars.get("nucl_model", 0)) == 5:
+            def _token(name: Any) -> str:
+                return "".join(ch for ch in str(name).lower() if ch.isalnum())
+
+            def _find(slot: int) -> dict[str, Any] | None:
+                return next((r for r in normalized["species_records"] if int(r.get("species_id", -1)) == slot), None)
+
+            slot2, slot4 = _find(2), _find(4)
+            name2 = _token(slot2.get("species_name")) if slot2 else ""
+            name4 = _token(slot4.get("species_name")) if slot4 else ""
+            ok2 = slot2 is not None and (name2.startswith("bc") or "black" in name2) and int(slot2.get("group_id", -1)) == 4
+            ok4 = slot4 is not None and ("so4" in name4 or "sulfat" in name4) and int(slot4.get("group_id", -1)) == 1
+            if not (ok2 and ok4):
+                errors.append(
+                    "nucl_model=5 (paper validation mode) hard-wires EBC=2 (group 4) and ESO4=4 "
+                    f"(group 1) in INC/pointer.inc: species #2 must be black carbon and #4 sulfate; "
+                    f"got #2={slot2 and slot2.get('species_name')!r}/group {slot2 and slot2.get('group_id')!r}, "
+                    f"#4={slot4 and slot4.get('species_name')!r}/group {slot4 and slot4.get('group_id')!r} — "
+                    "use the 30-species baseline layout (see template gmd_hazy_condensation) (U-07 / P-02)"
+                )
+
+        # U-03 配套护栏：(tag_init=0, tag_external=0, n_frac>1) 在 1.1 核上是读未初始化内存的组合
+        # （内核块④，SCRAM1.2 已加守卫跳过）。界面在换到 1.2 核之前必须拦下它。
+        if tag_init == 0 and int(scalars.get("tag_external", 0)) == 0 and n_frac > 1:
+            errors.append(
+                "tag_init=0 with tag_external=0 and n_frac>1 is an undefined combination: the 1.1 core "
+                "reads uninitialized state there (kernel block-4, guarded only since SCRAM1.2); "
+                "use tag_init=1, or tag_external=1, or n_frac=1 (U-03 guard)"
+            )
         return errors
 
     def size_rows(self, data: dict[str, Any]) -> list[dict[str, float | int | str]]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import copy
 import math
 import os
 import subprocess
@@ -99,6 +100,7 @@ class MainWindow(QMainWindow):
         self.monitor_timer.timeout.connect(self._refresh_run_monitor)
         self.current_prepared: dict[str, Any] | None = None
         self.current_run_started_at = 0.0
+        self._loading_widgets = False
         self._build_ui()
         self.refresh_all()
 
@@ -129,7 +131,22 @@ class MainWindow(QMainWindow):
             self._build_report_tab()
         self._build_settings_tab()
         self._build_help_tab()
+        self._connect_preview_refresh()
         self.statusBar().showMessage(self.i18n.t("status_ready"))
+
+    def _connect_preview_refresh(self) -> None:
+        """U-18：任何会影响 cfg 的控件变更都刷新预览。
+
+        预览画的是"实际送核"的配置（走 transform_config 管线），所以数字框、开关、
+        混合假设、结构数字的每次变更都要重画；_sync_visibility 末尾统一调预览渲染。
+        """
+        for widget in self.field_widgets.values():
+            if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                widget.valueChanged.connect(self._sync_visibility)
+            elif isinstance(widget, QComboBox):
+                widget.currentIndexChanged.connect(self._sync_visibility)
+        for spin in (self.n_species_spin, self.n_sizebin_spin, self.n_frac_spin):
+            spin.valueChanged.connect(self._sync_visibility)
 
     def _rebuild_ui(self) -> None:
         self.data = self._collect_data()
@@ -213,8 +230,7 @@ class MainWindow(QMainWindow):
         self.case_preset_combo.currentTextChanged.connect(self.apply_case_preset)
         self.mapping_scheme_combo = QComboBox()
         self.mapping_scheme_combo.addItems(["INTERNAL_MIXING", "EXTERNAL_MIXING"])
-        self._mixing_scheme_locked = ""
-        self.mapping_scheme_combo.currentIndexChanged.connect(self._on_mixing_scheme_changed)
+        self.mapping_scheme_combo.currentIndexChanged.connect(self._sync_visibility)
         self.mapping_scheme_combo.setToolTip(self.i18n.t("mixing_scheme_readonly_tip"))
         self.coefficient_file_edit = QLineEdit()
         coeff_browse = QPushButton(self.i18n.t("browse"))
@@ -244,6 +260,8 @@ class MainWindow(QMainWindow):
         self.with_coag_box = QCheckBox(self.i18n.t("with_coag"))
         self.with_cond_box = QCheckBox(self.i18n.t("with_cond"))
         self.with_nucl_box = QCheckBox(self.i18n.t("with_nucl"))
+        # U-18 修复（2026-09-29）：碰并开关原来没连任何信号，改了它预览不刷新
+        self.with_coag_box.toggled.connect(self._sync_visibility)
         self.with_cond_box.toggled.connect(self._sync_visibility)
         self.with_nucl_box.toggled.connect(self._sync_visibility)
         process_layout.addWidget(self.with_coag_box)
@@ -260,7 +278,11 @@ class MainWindow(QMainWindow):
         runtime_card = QGroupBox(self.i18n.t("runtime_card"))
         runtime_form = QFormLayout(runtime_card)
         self.field_widgets["final_time_hours"] = self._double_spin(0.01, 240.0, 0.25, single_step=1.0)
+        # U-04 处置（2026-09-29）：内核读入 dtmin 但 0 处使用（ModuleAdaptstep.f90 无钳制语句，
+        # 注释承诺的 DTMIN/DTMAX 从未实现）—— 控件置灰而不是移除：运行监控面板还用它估算总步数。
         self.field_widgets["dtmin_seconds"] = self._double_spin(0.001, 3600.0, 1.0, decimals=3, single_step=1.0)
+        self.field_widgets["dtmin_seconds"].setEnabled(False)
+        self.field_widgets["dtmin_seconds"].setToolTip(self.i18n.t("dtmin_seconds_dead_tip"))
         self.output_dir_edit = QLineEdit(str(self.current_results_root))
         browse_button = QPushButton(self.i18n.t("browse"))
         browse_button.clicked.connect(self.choose_output_directory)
@@ -334,8 +356,15 @@ class MainWindow(QMainWindow):
         cond_box_layout.addWidget(self.cond_only_widget)
         self.nucl_only_widget = QWidget()
         nucl_form = QFormLayout(self.nucl_only_widget)
-        self.field_widgets["nucl_model"] = self._int_spin(0, 9)
+        # U-07 处置（2026-09-29）：nucl_model 从 0–9 的数字框收窄为两档下拉 ——
+        # 1=三元成核；5=论文验证模式（内核把 EBC=2/ESO4=4 钉死在 INC/pointer.inc，
+        # 物种表会锁定为 30 物种 baseline 布局，见 _on_nucl_model_changed）。
+        # 其它取值只会让成核静默不发生（登记表 danger 项），不值得给一个能填错错的框。
+        self.field_widgets["nucl_model"] = QComboBox()
+        self.field_widgets["nucl_model"].addItem(self.i18n.t("nucl_model_trinary"), 1)
+        self.field_widgets["nucl_model"].addItem(self.i18n.t("nucl_model_paper"), 5)
         self.field_widgets["nucl_model"].setToolTip(self.i18n.t("nucl_model_tip"))
+        self.field_widgets["nucl_model"].currentIndexChanged.connect(self._on_nucl_model_changed)
         nucl_form.addRow(self.i18n.t("nucl_model"), self.field_widgets["nucl_model"])
         nucl_box = QGroupBox(self.i18n.t("nucl_card"))
         nucl_box_layout = QVBoxLayout(nucl_box)
@@ -381,6 +410,11 @@ class MainWindow(QMainWindow):
         self.raw_preview.setReadOnly(True)
         preview_layout.addWidget(self.raw_preview)
         layout.addWidget(preview_card)
+        # 2026-09-29（用户反馈）：窗口比内容窄时表单被挤压而不是出横条 ——
+        # 给内容设最小宽度，窄于它横向滚动条必然出现，保证"有个横条左右拉"。
+        container.setMinimumWidth(1040)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setWidget(container)
         outer.addWidget(scroll)
 
@@ -406,6 +440,15 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.generate_structure_button, 0, 6)
         controls_layout.addWidget(self.rebuild_structure_button, 0, 7)
         controls_layout.addWidget(self.logspace_button, 0, 8)
+        # U-03 处置（2026-09-29，方案 b′）：tag_init 从"界面完全没有"改为显式两档 ——
+        # 给用户初值来源的选择权，环境状态下拉只有在 tag_init=0 时才参与数值（tooltip 已说明）。
+        controls_layout.addWidget(QLabel(self.i18n.t("tag_init_source")), 1, 0)
+        self.field_widgets["tag_init"] = QComboBox()
+        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_binmass"), 1)
+        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_scenario"), 0)
+        self.field_widgets["tag_init"].setToolTip(self.i18n.t("tag_init_tip"))
+        self.field_widgets["tag_init"].currentIndexChanged.connect(self._on_tag_init_changed)
+        controls_layout.addWidget(self.field_widgets["tag_init"], 1, 1)
         outer.addWidget(controls)
 
         structure_help_label = QLabel(self.i18n.t("structure_help"))
@@ -640,6 +683,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(self.i18n.t("status_ready"))
 
     def _load_data_into_widgets(self) -> None:
+        self._loading_widgets = True
         scalars = self.data["scalars"]
         self.experiment_name_edit.setText(str(self.data.get("experiment_name", self.data.get("template_name", "experiment"))))
         template_name = self.data.get("template_name", "tutorial_minimal")
@@ -653,9 +697,10 @@ class MainWindow(QMainWindow):
         idx = self.case_preset_combo.findText(matched)
         self.case_preset_combo.setCurrentIndex(idx if idx >= 0 else -1)
         self.case_preset_combo.blockSignals(False)
-        self._mixing_scheme_locked = str(self.data.get("mixing_assumption", "EXTERNAL_MIXING"))
+        # U-01 修复（2026-09-29）：下拉初始值来自 cfg 反推（config_model.parse 按 n_frac），
+        # 但**不再锁定** —— 手改允许，预览会显示程序实际送核的配置（含改写项）。
         self.mapping_scheme_combo.blockSignals(True)
-        self.mapping_scheme_combo.setCurrentText(self._mixing_scheme_locked)
+        self.mapping_scheme_combo.setCurrentText(str(self.data.get("mixing_assumption", "EXTERNAL_MIXING")))
         self.mapping_scheme_combo.blockSignals(False)
         self.with_coag_box.setChecked(bool(int(scalars["with_coag"])))
         self.with_cond_box.setChecked(bool(int(scalars["with_cond"])))
@@ -680,6 +725,25 @@ class MainWindow(QMainWindow):
                 widget.setValue(int(value))
             elif isinstance(widget, QDoubleSpinBox):
                 widget.setValue(float(value))
+        nucl_combo = self.field_widgets["nucl_model"]
+        nucl_value = int(scalars.get("nucl_model", 1))
+        nucl_idx = nucl_combo.findData(nucl_value)
+        if nucl_idx < 0:
+            # 载入了 1/5 以外的历史值：临时补一项显示，不静默改写用户的 cfg
+            nucl_combo.addItem(str(nucl_value), nucl_value)
+            nucl_idx = nucl_combo.count() - 1
+        nucl_combo.blockSignals(True)
+        nucl_combo.setCurrentIndex(nucl_idx)
+        nucl_combo.blockSignals(False)
+        tag_combo = self.field_widgets["tag_init"]
+        tag_value = int(scalars.get("tag_init", 1))
+        tag_idx = tag_combo.findData(tag_value)
+        if tag_idx < 0:
+            tag_combo.addItem(str(tag_value), tag_value)
+            tag_idx = tag_combo.count() - 1
+        tag_combo.blockSignals(True)
+        tag_combo.setCurrentIndex(tag_idx)
+        tag_combo.blockSignals(False)
         self.coefficient_file_edit.setText(str(scalars["coefficient_file"]))
         self.n_species_spin.setValue(int(scalars["n_species"]))
         self.n_sizebin_spin.setValue(int(scalars["n_sizebin"]))
@@ -687,7 +751,9 @@ class MainWindow(QMainWindow):
         self.output_dir_edit.setText(str(self.current_results_root))
         ui_mode = str(self.settings.get("ui_mode", "basic"))
         self.basic_mode_combo.setCurrentIndex(0 if ui_mode == "basic" else 1)
-        self.raw_preview.setPlainText(self._render_preview_text())
+        self._apply_nucl_lock_state()
+        self._apply_init_source_state()
+        self._loading_widgets = False
         self._sync_visibility()
 
     def _collect_data(self) -> dict[str, Any]:
@@ -696,7 +762,8 @@ class MainWindow(QMainWindow):
         data["template_name"] = str(self.template_combo.currentData())
         data["case_preset"] = self.case_preset_combo.currentText()
         data["mixing_assumption"] = self.mapping_scheme_combo.currentText()
-        data["mapping_scheme"] = "DETERMINISTIC_NEAREST"
+        # U-02 修复（2026-09-29）：mapping_scheme 是独立配置，随载入的 cfg/模板走，
+        # 不再在这里强写成 DETERMINISTIC_NEAREST（原写法让 cfg 字段永不生效）。
         data["scalars"]["with_coag"] = 1 if self.with_coag_box.isChecked() else 0
         data["scalars"]["with_cond"] = 1 if self.with_cond_box.isChecked() else 0
         data["scalars"]["with_nucl"] = 1 if self.with_nucl_box.isChecked() else 0
@@ -710,6 +777,9 @@ class MainWindow(QMainWindow):
                 data["scalars"][key] = widget.value()
             elif isinstance(widget, QDoubleSpinBox):
                 data["scalars"][key] = widget.value()
+        # nucl_model / tag_init 现在是下拉框（U-07/U-03），不在上面 QSpinBox 循环覆盖范围内
+        data["scalars"]["nucl_model"] = int(self.field_widgets["nucl_model"].currentData())
+        data["scalars"]["tag_init"] = int(self.field_widgets["tag_init"].currentData())
         # Bug #11 修复（2026-09-11）：把与当前 Case Preset 建议值不同的键标记为"显式"，
         # 运行时不会被预设覆盖——用户改过开关/时长，就按用户的跑；与预设一致时不标记，
         # 保持原有行为（选了预设即套用其过程与时长）。
@@ -792,10 +862,29 @@ class MainWindow(QMainWindow):
         return self.config_model.normalize(data)
 
     def _render_preview_text(self) -> str:
-        preview_path = self.run_service.generated_root / "_preview.cfg"
+        """U-18 修复（2026-09-29）：预览 = 实际送核的配置。
+
+        原来画的是 _collect_data() 的"改写前"样子，而混合假设/案例预设的改写发生在
+        prepare_run 内部 ⇒ 预览与实跑不一致（混合假设下拉因此做成静默弹回）。
+        现在预览与运行共用 transform_config 管线，并加三行头注说明改写项与两臂差异。
+        """
+        if getattr(self, "_loading_widgets", False):
+            return self.raw_preview.toPlainText()
         snapshot = self.data if not hasattr(self, "species_meta_table") else self._collect_data()
-        self.config_model.serialize(snapshot, preview_path)
-        return preview_path.read_text(encoding="utf-8")
+        scheme = self.mapping_scheme_combo.currentText() or "EXTERNAL_MIXING"
+        transformed, rewrite_keys, arm_keys = self.run_service.preview_transform(
+            copy.deepcopy(snapshot), scheme
+        )
+        header = (
+            f"# 预览 = 实际送核的配置（单跑混合假设：{scheme}）\n"
+            f"# 相对界面/载入值被程序改写的项：{'、'.join(rewrite_keys) or '无'}\n"
+            f"# 比较模式固定跑内/外两臂，两臂差异项：{'、'.join(arm_keys) or '无'}\n"
+        )
+        # U-07 反馈（2026-09-29）：切论文验证模式时 cfg 正文只变一个数字（nucl 行 1→5），
+        # 用户看不见 —— 模式激活时在头注里显式声明。
+        if int(transformed["scalars"].get("nucl_model", 0)) == 5:
+            header += "# 论文验证模式（nucl_model=5）：物种表已锁定为 30 物种 baseline 布局（2 号=BC、4 号=SO4）\n"
+        return header + self.config_model.serialize_text(transformed)
 
     def _on_table_cell_changed(self, _table: QTableWidget) -> None:
         """Update config preview when any structure-editor table cell is edited."""
@@ -986,13 +1075,53 @@ class MainWindow(QMainWindow):
                 return name
         return ""
 
-    def _on_mixing_scheme_changed(self, _index: int) -> None:
-        """Revert any manual change to the mixing assumption combo."""
-        if self._mixing_scheme_locked and self.mapping_scheme_combo.currentText() != self._mixing_scheme_locked:
-            self.mapping_scheme_combo.blockSignals(True)
-            self.mapping_scheme_combo.setCurrentText(self._mixing_scheme_locked)
-            self.mapping_scheme_combo.blockSignals(False)
-            self.statusBar().showMessage(self.i18n.t("mixing_scheme_readonly_tip"), 5000)
+    def _on_tag_init_changed(self, *_args: object) -> None:
+        """U-03（2026-09-29）：初值来源切换的界面联动。
+
+        tag_init=0（内置场景分布）时内核不读逐档质量 ⇒ 逐档质量表置灰并说明；
+        tag_init=1 恢复。场景下拉的效力说明见其 tooltip（tag_init=0 时才参与数值）。
+        """
+        if getattr(self, "_loading_widgets", False):
+            return
+        self._apply_init_source_state()
+        self._sync_visibility()
+
+    def _apply_init_source_state(self) -> None:
+        using_scenario = int(self.field_widgets["tag_init"].currentData()) == 0
+        self.initial_mass_table.setEnabled(not using_scenario)
+        self.initial_mass_table.setToolTip(
+            self.i18n.t("tag_init_mass_table_locked_tip") if using_scenario else ""
+        )
+
+    def _on_nucl_model_changed(self, *_args: object) -> None:
+        """U-07（2026-09-29）：论文验证模式锁定 30 物种 baseline 布局。
+
+        nucl_model=5 时内核把 EBC=2/ESO4=4 钉死在 INC/pointer.inc，物种表必须匹配
+        （2 号=黑碳/组 4，4 号=硫酸盐/组 1），否则静默失效（初始总质量只剩一半）。
+        切到 5 时自动换成 gmd_hazy_condensation 的 baseline 布局并锁住物种数；
+        validate() 里的布局护栏仍保留，兜住手工 cfg 与表格编辑。
+        """
+        if getattr(self, "_loading_widgets", False):
+            return
+        self.data = self._collect_data()
+        if int(self.field_widgets["nucl_model"].currentData()) == 5:
+            baseline = self.template_service.load_template("gmd_hazy_condensation")
+            self.data["species_records"] = copy.deepcopy(baseline["species_records"])
+            self.data["scalars"]["n_species"] = len(self.data["species_records"])
+            # 必须同步数字框：预览/收集走 _collect_data()，n_species 以数字框为准 ——
+            # 不同步的话物种表换了 30 行、预览又被数字框的旧值截回原样（2026-09-29 用户实测发现）
+            self.n_species_spin.setValue(int(self.data["scalars"]["n_species"]))
+            self.refresh_structure_tables()
+        self._apply_nucl_lock_state()
+        self._sync_visibility()
+
+    def _apply_nucl_lock_state(self) -> None:
+        paper_mode = int(self.field_widgets["nucl_model"].currentData()) == 5
+        self.n_species_spin.setEnabled(not paper_mode)
+        self.species_meta_table.setToolTip(
+            self.i18n.t("nucl_model_layout_locked_tip") if paper_mode else ""
+        )
+
     def apply_case_preset(self, case_name: str) -> None:
         preset = CASE_PRESETS.get(case_name)
         if not preset:
@@ -1018,6 +1147,20 @@ class MainWindow(QMainWindow):
         self.settings["recent_configs"] = recent[:8]
         self.settings_service.save(self.settings)
         self.refresh_all()
+        # 2026-09-30（用户要求）：载入坏配置要当场提醒 —— 原先 load_config 解析完直接刷新，
+        # 零质量/nl5 布局不符/未定义组合等要等到点"运行"才被拦下。现在载入即弹一次可读清单
+        # （仍然载入，便于用户在结构编辑器里直接改）。
+        self._warn_if_config_invalid(self.data)
+
+    def _warn_if_config_invalid(self, data: dict[str, Any]) -> list[str]:
+        errors = self.config_model.validate(data)
+        if errors:
+            QMessageBox.warning(
+                self,
+                self.i18n.t("validate_config"),
+                self.i18n.t("load_config_invalid_prefix") + "\n\n- " + "\n- ".join(errors),
+            )
+        return errors
 
     def save_config(self) -> None:
         if self.current_config_path == self.config_model.default_path:
@@ -1106,7 +1249,9 @@ class MainWindow(QMainWindow):
         mode_dir = "compare" if compare else "single"
         exp_name = self.experiment_name_edit.text().strip() or "experiment"
         case_name = self.case_preset_combo.currentText().strip()
-        dir_name = f"{exp_name}_{case_name}" if case_name else exp_name
+        # U-08 修复（2026-09-29）：目录名 ASCII 化 —— 内核对非 ASCII 路径的可打开性未验证，
+        # 直接绕开；纯 ASCII 名保持原样（ascii_name 是恒等变换）。
+        dir_name = self.run_service.ascii_name(f"{exp_name}_{case_name}" if case_name else exp_name)
         output_root = self.current_results_root / mode_dir / dir_name
         output_root.mkdir(parents=True, exist_ok=True)
         self.plot_service.set_results_root(output_root)

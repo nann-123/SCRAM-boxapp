@@ -3,7 +3,7 @@
 
 对照五方，把「不一致」从"要读代码才发现"变成"跑一条命令就列出来"：
   1) core/schema/config_schema.json  —— 配置字段声明
-  2) core/schema/gui_fields.json      —— GUI/契约登记表（本脚本的输入）
+  2) scripts/gui_fields.json      —— GUI/契约登记表（本脚本的输入）
   3) SRC/*.f90                        —— 核心到底读不读、用不用
   4) app/i18n/{zh_CN,en_US}.json       —— 标签是否两个语言都齐
   5) app/views/main_window.py         —— 界面上到底有没有这个控件
@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-REGISTRY = ROOT / "core" / "schema" / "gui_fields.json"
+REGISTRY = ROOT / "scripts" / "gui_fields.json"
 SCHEMA = ROOT / "core" / "schema" / "config_schema.json"
 FORTRAN_SRC = ROOT / "core" / "executables_or_wrappers" / "runtime" / "windows" / "source" / "SCRAM1.2"
 MAIN_WINDOW = ROOT / "app" / "views" / "main_window.py"

@@ -83,6 +83,12 @@ env.Append(LINKFLAGS = flags + " " + " ".join(link_flags))
 env.Append(LIBPATH = library_path)
 env.Append(LIBS = link_libs)
 
+# Windows PE 默认栈保留只有 2 MB：SCRAM1.2 的 safe(-O2) 优化内联出更大的栈帧，
+# 大配置上初始化阶段直接段错误（同源码 debug(-O0) 能完整跑完）。把栈保留提到 16 MB。
+# 只对 Windows 链接加 —— Linux ELF 的 GNU ld 不认识 --stack。
+if env["PLATFORM"] in ("win32", "cygwin"):
+    env.Append(LINKFLAGS = " -Wl,--stack,16777216 ")
+
 conf = Configure(env)
 for library in ["netcdf", "netcdff"]:
     conf.CheckLib(library)

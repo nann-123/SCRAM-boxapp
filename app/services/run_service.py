@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import json
 import math
@@ -71,6 +72,14 @@ class RunService:
         self.results_root = results_root
         self.results_root.mkdir(parents=True, exist_ok=True)
 
+    def last_runtime_error(self) -> str:
+        """诊断用：最近一次找不到/校验失败运行时的原因（供脚本打印）。"""
+        return self._last_runtime_error
+
+    def runtime_manifest(self) -> dict[str, Any]:
+        """诊断用：当前暂存运行时的清单快照（供基线 JSON 记录用哪个核采集）。"""
+        return dict(self._runtime_manifest)
+
     def default_executable(self) -> Path:
         candidates = self._candidate_executables()
         for source, candidate in candidates:
@@ -91,11 +100,13 @@ class RunService:
             return False
         return executable.exists() and self._is_compatible_executable(executable)
 
-    def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
-        # Case preset provides suggested values to the GUI (via apply_case_preset),
-        # but the user may override them（Bug #11：显式设置优先）。
-        # 这里先取一份是为了兼容"调用方直接传原始 dict"的路径；
-        # #19 修复（2026-09-23）后 normalize() 也会保留 explicit_keys，两条路径等价。
+    def transform_config(self, config_data: dict[str, Any], scheme: str) -> dict[str, Any]:
+        """把界面/载入的配置变成"实际送核"的配置（U-18 抽取）。
+
+        混合假设改写（n_frac/fraction_bounds/tag_external/kind_composition）与案例预设
+        补齐原来藏在 prepare_run 里，预览画不到 ⇒ 用户看到的 cfg 和实跑的 cfg 不一致。
+        现在预览与本函数共用同一条变换管线：预览说真话，prepare_run 只做路径/env 等副作用。
+        """
         explicit = {str(key) for key in (config_data.get("explicit_keys") or [])}
         data = self.config_model.normalize(config_data)
         data = self._with_mixing_assumption(data, scheme)
@@ -104,12 +115,60 @@ class RunService:
         preset = CASE_PRESETS.get(preset_name) if preset_name else None
         if preset is not None:
             data = self._with_case_preset(data, preset, explicit)
-        config_path = self.generated_root / f"{case_name}_{scheme.lower()}.cfg"
+        return data
+
+    def preview_transform(self, config_data: dict[str, Any], scheme: str) -> tuple[dict[str, Any], list[str], list[str]]:
+        """U-18/U-05：返回 (变换后配置, 相对输入被改写的键, 两臂差异键)，预览与运行共用。"""
+        base = self.config_model.normalize(config_data)
+        data = self.transform_config(config_data, scheme)
+        rewrite_keys = self._diff_keys(base, data, include_labels=True)
+        other_scheme = "EXTERNAL_MIXING" if str(scheme).upper() == "INTERNAL_MIXING" else "INTERNAL_MIXING"
+        other_data = self.transform_config(copy.deepcopy(config_data), other_scheme)
+        arm_keys = self._diff_keys(data, other_data, include_labels=False)
+        return data, rewrite_keys, arm_keys
+
+    @staticmethod
+    def _diff_keys(a: dict[str, Any], b: dict[str, Any], include_labels: bool) -> list[str]:
+        keys: set[str] = set()
+        scalars_a, scalars_b = a.get("scalars", {}), b.get("scalars", {})
+        for key in set(scalars_a) | set(scalars_b):
+            if scalars_a.get(key) != scalars_b.get(key):
+                keys.add(key)
+        if a.get("fraction_bounds") != b.get("fraction_bounds"):
+            keys.add("fraction_bounds")
+        if include_labels:
+            keys.update(key for key in ("mixing_assumption", "mapping_scheme") if a.get(key) != b.get(key))
+        return sorted(keys)
+
+    @staticmethod
+    def ascii_name(name: str) -> str:
+        """U-08：目录/文件名 ASCII 化 —— 内核对非 ASCII 路径的可打开性未验证，直接绕开。
+
+        纯 ASCII 名保持原样；含非 ASCII 时替换为 "_" 并追加原名 md5 前 8 位避免碰撞。
+        """
+        text = str(name)
+        safe = "".join(ch if (ch.isascii() and (ch.isalnum() or ch in "-_.")) else "_" for ch in text)
+        safe = re.sub(r"_+", "_", safe).strip("_") or "case"
+        if safe != text:
+            safe = f"{safe}-{hashlib.md5(text.encode('utf-8')).hexdigest()[:8]}"
+        return safe
+
+    def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
+        # Case preset provides suggested values to the GUI (via apply_case_preset),
+        # but the user may override them（Bug #11：显式设置优先）。
+        # 变换管线已抽到 transform_config（U-18），预览与这里共用。
+        data = self.transform_config(config_data, scheme)
+        _, _, arm_diff_keys = self.preview_transform(config_data, scheme)
+        safe_case = self.ascii_name(case_name)
+        config_path = self.generated_root / f"{safe_case}_{scheme.lower()}.cfg"
         runtime_config_relpath = self._runtime_config_relpath(case_name, scheme)
         runtime_config_path = self.runtime_dir / runtime_config_relpath
         self.config_model.serialize(data, config_path)
         self.config_model.serialize(data, runtime_config_path)
-        run_root = (output_root or self.results_root) / "runs" / case_name / scheme.lower()
+        # 2026-09-29（U-19）：SCRAM_RESULTS_DIR 必须是绝对路径 —— 1.2 内核会读它
+        # （ModuleCoeffRepartitionBoxmodel.f90:122），相对路径会被内核按它自己的 cwd 解析，
+        # 结果收集读到错位产物（实测终态记账虚高 5/3）。这里统一 resolve 兜底。
+        run_root = Path(output_root or self.results_root).resolve() / "runs" / safe_case / scheme.lower()
         (run_root / "csv").mkdir(parents=True, exist_ok=True)
         (run_root / "logs").mkdir(parents=True, exist_ok=True)
         log_path = run_root / "logs" / "run.log"
@@ -120,7 +179,10 @@ class RunService:
                 "SCRAM_TESTCASE": case_name,
                 "SCRAM_PROCESS_COMBO": case_name,
                 "SCRAM_SCHEME_NAME": scheme.lower(),
-                "SCRAM_COEFF_REPARTITION_MODE": self._coag_mapping_mode(scheme),
+                # U-02 修复（2026-09-29）：原来送的是混合假设经 _coag_mapping_mode 翻译 ——
+                # 两者都不等于 "LEGACY" ⇒ 恒为 COAG_TARGET_NEAREST，cfg 里的 mapping_scheme
+                # 从不生效。现在直接按配置字段翻译（内核两值都认，见 coeff_parse_repartition_mode）。
+                "SCRAM_COEFF_REPARTITION_MODE": self._coag_mapping_mode(data),
                 "SCRAM_COEFF_CACHE_MODE": "ALWAYS_REBUILD",
                 # 2026-09-23 改造（原 Bug #12）：核心认的是 SCRAM_REDISTRIBUTION_MODE
                 # （SCRAM1.2 新增，取值仅 legacy / moving_center_dualpivot，其它值核心会 error stop）。
@@ -142,6 +204,10 @@ class RunService:
             "env": env,
             "command": [str(executable), runtime_config_relpath.as_posix()],
             "runtime_manifest": runtime_manifest,
+            # U-05（2026-09-29）：两臂差异清单 —— 与另一混合假设臂逐键对比的结果。
+            # 出厂模板（tag_external=0）应为 ["fraction_bounds", "n_frac"]；tag_external=1
+            # 的配置会多出 "tag_external"，即差异里含初始态，界面/报告据此提示。
+            "arm_diff_keys": arm_diff_keys,
             "total_sim_seconds": float(data["scalars"]["final_time_hours"]) * 3600.0,
         }
 
@@ -340,7 +406,8 @@ class RunService:
         data = self.config_model.normalize(config_data)
         normalized_scheme = scheme.upper()
         data["mixing_assumption"] = normalized_scheme
-        data["mapping_scheme"] = "DETERMINISTIC_NEAREST"
+        # U-02 修复（2026-09-29）：不再把 mapping_scheme 强写成 DETERMINISTIC_NEAREST ——
+        # 该字段是独立配置（内核重分布系数模式），与混合假设无关，应随 cfg/模板一路透传。
         if normalized_scheme == "INTERNAL_MIXING":
             data["scalars"]["tag_external"] = 0
             data["scalars"]["n_frac"] = 1
@@ -358,10 +425,14 @@ class RunService:
             data["scalars"]["tag_external"] = int(data["scalars"].get("tag_external", 0))
         return self.config_model.normalize(data)
 
-    def _coag_mapping_mode(self, scheme: str) -> str:
-        if scheme.upper() == "LEGACY":
-            return "LEGACY"
-        return "COAG_TARGET_NEAREST"
+    def _coag_mapping_mode(self, data: dict[str, Any]) -> str:
+        """U-02：把配置里的 mapping_scheme 翻成核心认的 SCRAM_COEFF_REPARTITION_MODE 取值。
+
+        原来收的是混合假设字符串（INTERNAL/EXTERNAL），恒译出 COAG_TARGET_NEAREST，
+        cfg 字段被完全无视。内核两侧都认（coeff_parse_repartition_mode）。
+        """
+        scheme = str(data.get("mapping_scheme", "DETERMINISTIC_NEAREST")).strip().upper()
+        return "LEGACY" if scheme == "LEGACY" else "COAG_TARGET_NEAREST"
 
     def _remap_mode(self, data: dict[str, Any]) -> str:
         """把 redistribution_option 翻成核心接受的 SCRAM_REDISTRIBUTION_MODE 取值。"""

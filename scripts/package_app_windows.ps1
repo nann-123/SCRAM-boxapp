@@ -8,7 +8,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $RootFull = [System.IO.Path]::GetFullPath($Root)
 $AppName = "SCRAM BoxApp"
 $PackageId = "SCRAMBoxApp"
-$Version = "0.1.0"
+$Version = "0.3.0"
 $Arch = "windows-x64"
 
 Set-Location $RootFull
@@ -107,7 +107,9 @@ $AddData = @(
     "$(Join-Path $RootFull 'app\i18n');app/i18n",
     "$(Join-Path $RootFull 'app\resources');app/resources",
     "$(Join-Path $RootFull 'core\defaults');core/defaults",
-    "$(Join-Path $RootFull 'core\schema');core/schema",
+    # gui_fields.json 是开发侧字段登记表（check_field_registry 用），不随包分发；
+    # 运行时只需要 config_schema.json
+    "$(Join-Path $RootFull 'core\schema\config_schema.json');core/schema/config_schema.json",
     "$(Join-Path $RootFull 'core\templates');core/templates",
     "$(Join-Path $RootFull 'docs\screenshots');docs/screenshots"
 )
@@ -159,6 +161,47 @@ foreach ($ManualPattern in $ManualPatterns) {
         Copy-Item -Path $ManualPath -Destination $AppDocsDir -Force
     }
 }
+
+# 手册 md 里 `![...](undergrad_lab_assets/...)` 这类相对引用必须随包，否则学生打开 md 全是图裂
+# （PDF 自带嵌入图，不受影响）。2026-09-30 补。
+foreach ($AssetDir in @("undergrad_lab_assets", "user_manual_zh_assets")) {
+    $AssetSource = Join-Path $RootFull "docs\$AssetDir"
+    if (Test-Path -LiteralPath $AssetSource) {
+        Copy-Item -LiteralPath $AssetSource -Destination $AppDocsDir -Recurse -Force
+    }
+}
+
+# ---- 发布内容白名单校验（2026-09-30 增加）----
+# 打包是"白名单复制"制：docs/ 下的调试台账、scripts/ 全部、内核源码树等都不应进包。
+# 这里显式断言，防止以后有人手滑把开发文件加进去。
+# 只扫发布资产区（docs / core / 顶层），跳过 PyInstaller 自己的 _internal 捆绑目录。
+$ForbiddenNamePatterns = @(
+    "BUG_TRACKING.md", "undobug.md", "092*.md", "0923修改.md", "0924proposals.md",
+    "0929check.md", "0929linux.md", "0929test.md", "rebuild.md", "baseline_scram12.json",
+    "nl5*.md", "gui_fields.json", "*.pyc", "*.pyo", "__pycache__"
+)
+$ForbiddenTopLevelDirs = @("scripts", "install_logs", "build", "dist",
+                           "core\executables_or_wrappers\runtime\windows\source")
+$Leaks = @()
+$ScanRoots = @($AppDir) + @(Get-ChildItem -LiteralPath $AppDir -Directory -Force -ErrorAction SilentlyContinue |
+                             Where-Object { $_.Name -ne "_internal" } | ForEach-Object { $_.FullName })
+$ScanTargets = @($ScanRoots | Where-Object { $_ -notlike "*\_internal\*" })
+foreach ($Target in $ScanTargets) {
+    if (-not (Test-Path -LiteralPath $Target)) { continue }
+    foreach ($Pattern in $ForbiddenNamePatterns) {
+        $Hits = Get-ChildItem -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -like $Pattern }
+        if ($Hits) { $Leaks += ($Hits | ForEach-Object { $_.FullName.Substring($AppDir.Length) }) }
+    }
+}
+foreach ($Rel in $ForbiddenTopLevelDirs) {
+    $Abs = Join-Path $AppDir $Rel
+    if (Test-Path -LiteralPath $Abs) { $Leaks += "\$Rel" }
+}
+if ($Leaks.Count -gt 0) {
+    throw "发布包混入了开发文件（白名单校验失败）：`n  " + (($Leaks | Sort-Object -Unique) -join "`n  ")
+}
+Write-Host "release whitelist check: ok (no debug/dev files inside the package)"
 
 $DependencySource = Join-Path $RootFull "third_party\report_dependencies\windows"
 if (Test-Path -LiteralPath $DependencySource) {

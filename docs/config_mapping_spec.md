@@ -16,7 +16,7 @@ The GUI does not expose the SCRAM cfg file as one long form. It reorganizes the 
   - internal/external mixing explanation
 - `Runtime and Output`
   - simulation time
-  - minimum timestep
+  - minimum timestep (dead control — greyed out; the core reads `dtmin` but never uses it)
   - output directory
 - `Environment and Initial State`
   - temperature
@@ -114,3 +114,25 @@ Changing these values and clicking `Generate Structure` rebuilds the table skele
 - diameter bounds must be strictly increasing and have length `n_sizebin + 1`
 - fraction bounds must be strictly increasing, start at `0`, end at `1`, and have length `n_frac + 1`
 - mixing assumption must be `INTERNAL_MIXING` or `EXTERNAL_MIXING`
+
+
+## 2026-09-29 GUI changes (keep this spec in sync)
+
+- **Mixing assumption** is no longer locked: the combo's initial value is inferred from the loaded cfg (`n_frac == 1`
+  → `INTERNAL_MIXING`, else `EXTERNAL_MIXING`) and may be changed freely. Compare runs always run both arms and
+  ignore this combo.
+- **Config preview now shows what is actually sent to the core**: `_render_preview_text()` runs the same
+  `RunService.transform_config` pipeline as `prepare_run` and prepends a header with the rewritten keys and the
+  two-arm diff keys.
+- **`nucl_model`** is a two-option combo (1 = ternary nucleation, 5 = paper validation mode). Selecting 5 switches
+  and locks the species table to the 30-species baseline layout (slot 2 = BC/group 4, slot 4 = SO4/group 1).
+- **`tag_init`** gained a control: `Initial values from` (1 = per-bin masses in the cfg, 0 = built-in scenario
+  distributions). With 0 the per-bin mass table is greyed out and the serializer emits the 5-column short species
+  rows (species total mass = sum of per-bin masses).
+- **Input guards** in `ConfigModel.validate()`: zero-mass input (U-06a), `nucl_model=5` layout mismatch (U-07),
+  and the undefined `(tag_init=0, tag_external=0, n_frac>1)` combination (1.1 core reads uninitialized memory there).
+  Loading a bad cfg now warns immediately; running is still blocked until it is fixed.
+- **`mapping_scheme`** is wired through to `SCRAM_COEFF_REPARTITION_MODE` (it was silently forced to
+  `COAG_TARGET_NEAREST` before).
+- **Paths** handed to the core are ASCII-only (`RunService.ascii_name`), and `SCRAM_RESULTS_DIR` is always absolute
+  (the 1.2 core reads it; a relative value made the result collector read misaligned outputs).
