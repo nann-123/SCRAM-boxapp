@@ -8,7 +8,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $RootFull = [System.IO.Path]::GetFullPath($Root)
 $AppName = "SCRAM BoxApp"
 $PackageId = "SCRAMBoxApp"
-$Version = "0.3.0"
+$Version = "1.2"
 $Arch = "windows-x64"
 
 Set-Location $RootFull
@@ -108,9 +108,15 @@ $AddData = @(
     "$(Join-Path $RootFull 'app\resources');app/resources",
     "$(Join-Path $RootFull 'core\defaults');core/defaults",
     # gui_fields.json 是开发侧字段登记表（check_field_registry 用），不随包分发；
-    # 运行时只需要 config_schema.json
-    "$(Join-Path $RootFull 'core\schema\config_schema.json');core/schema/config_schema.json",
+    # 运行时只需要 config_schema.json。
+    # ⚠ PyInstaller 6.x 的 --add-data 语义：文件源必须配「目录」目标 —— 写
+    #   "x.json;core/schema/x.json" 会建出 x.json/ 目录再把文件塞进去，运行时读
+    #   core/schema/x.json 直接 PermissionError（2026-09-30 发布测试实测）。
+    "$(Join-Path $RootFull 'core\schema\config_schema.json');core/schema",
     "$(Join-Path $RootFull 'core\templates');core/templates",
+    # teaching 基座（tutorial_minimal / tutorial_aging 两个模板的 base 配置）：缺它则
+    # 两个教学模板在打包版里直接 FileNotFoundError（2026-09-30 发布测试实测）。
+    "$(Join-Path $RootFull 'examples\configs');examples/configs",
     "$(Join-Path $RootFull 'docs\screenshots');docs/screenshots"
 )
 
@@ -143,7 +149,9 @@ $AppName $Version
 
 Start the GUI by double-clicking "$AppName.exe".
 The bundled ProgramSCRAM.exe is the command-line simulation core and is not the GUI entry point.
-PDF reports work without LaTeX through the built-in offline backend. Optional LaTeX installers are in report_dependencies.
+PDF reports work without LaTeX through the built-in offline backend.
+Optional LaTeX installers are NOT inside this package; they ship separately in the
+"dependencies" folder next to the release archive (see docs/report_dependencies_windows.md).
 The Chinese user manual is in docs.
 "@
 Set-Content -LiteralPath (Join-Path $AppDir "README_FIRST.txt") -Value $VersionText -Encoding UTF8
@@ -203,13 +211,44 @@ if ($Leaks.Count -gt 0) {
 }
 Write-Host "release whitelist check: ok (no debug/dev files inside the package)"
 
+# ---- 发布自检（2026-09-30 增加）----
+# 在**打包产物**上跑一次冒烟：载入全部出厂模板 + 跑一次最快的对比算例（含从随包
+# 运行时暂存内核、写 csv/图）。打包版缺资产、--add-data 语义变化、运行时装不上，
+# 都在这里当场失败，不会留到学生手里。
+$SmokeReport = Join-Path $BuildRoot "release_smoke.json"
+if (Test-Path -LiteralPath $SmokeReport) { Remove-Item -LiteralPath $SmokeReport -Force }
+$SmokeEnv = @{
+    SCRAM_GUI_SMOKE_TEST   = "1"
+    SCRAM_GUI_SMOKE_RUN    = "1"
+    SCRAM_GUI_SMOKE_REPORT = $SmokeReport
+}
+foreach ($Key in $SmokeEnv.Keys) { Set-Item -Path "Env:$Key" -Value $SmokeEnv[$Key] }
+& $AppExe | Out-Null
+foreach ($Key in $SmokeEnv.Keys) { Remove-Item -Path "Env:$Key" -ErrorAction SilentlyContinue }
+if (-not (Test-Path -LiteralPath $SmokeReport)) {
+    throw "Release self-test failed: the packaged app wrote no smoke report (crashed on start?). Report path: $SmokeReport"
+}
+$Smoke = Get-Content -LiteralPath $SmokeReport -Raw | ConvertFrom-Json
+if (-not $Smoke.ok) {
+    throw "Release self-test failed: " + ($Smoke | ConvertTo-Json -Depth 6)
+}
+$TemplateCount = ($Smoke.templates | Get-Member -MemberType NoteProperty).Count
+$RunMass = $Smoke.run.arms[0].final_mass
+Write-Host "release self-test: ok (templates=$TemplateCount, smoke run final_mass=$RunMass, report=$SmokeReport)"
+
 $DependencySource = Join-Path $RootFull "third_party\report_dependencies\windows"
 if (Test-Path -LiteralPath $DependencySource) {
-    $AppDependencyDir = Join-Path $AppDir "report_dependencies"
+    # 2026-09-30（用户要求"tex 出包"）：MiKTeX 安装器只放发布目录的 dependencies/ 下，
+    # 不再复制进应用目录 —— 随包会把便携 zip 与安装器各撑大 142 MB，而普通用户用不到它
+    #（内置离线 PDF 后端已够用）。文档与用户手册本来写的就是 dist/windows/dependencies/…。
     $DistDependencyDir = Join-Path $DistRoot "dependencies"
-    New-Item -ItemType Directory -Path $AppDependencyDir -Force | Out-Null
+    # 2026-09-30（用户要求"tex 出包"）：MiKTeX 安装器只放发布目录的 dependencies/ 下，
+    # 不再复制进应用目录 —— 随包会把便携 zip 与安装器各撑大 142 MB，而普通用户用不到它
+    #（内置离线 PDF 后端已够用）。文档与用户手册本来写的就是 dist/windows/dependencies/…。
     New-Item -ItemType Directory -Path $DistDependencyDir -Force | Out-Null
-    Copy-Item -Path (Join-Path $DependencySource "*") -Destination $AppDependencyDir -Recurse -Force
+    # 2026-09-30（用户要求"tex 出包"）：MiKTeX 安装器只放发布目录的 dependencies/ 下，
+    # 不再复制进应用目录 —— 随包会把便携 zip 与安装器各撑大 142 MB，而普通用户用不到它
+    #（内置离线 PDF 后端已够用）。文档与用户手册本来写的就是 dist/windows/dependencies/…。
     Copy-Item -Path (Join-Path $DependencySource "*") -Destination $DistDependencyDir -Recurse -Force
 }
 
@@ -217,7 +256,9 @@ $ZipPath = Join-Path $DistRoot "$PackageId-$Arch.zip"
 if (Test-Path -LiteralPath $ZipPath) {
     Remove-Item -LiteralPath $ZipPath -Force
 }
-Compress-Archive -Path (Join-Path $AppDir "*") -DestinationPath $ZipPath -Force
+    # 2026-09-30（用户要求"zip 加夹层"）：压缩应用目录本身而不是它的内容 —— 包里自带一层
+    # 顶层文件夹，解压不会把 exe/_internal/docs 直接铺到当前目录；安装器负责摊平这一层。
+Compress-Archive -Path $AppDir -DestinationPath $ZipPath -Force
 
 if (-not $SkipInstaller) {
     $InstallerBuildDir = Reset-Directory (Join-Path $BuildRoot "installer")
@@ -302,6 +343,30 @@ internal static class ScramBoxAppInstaller
 
         ZipFile.ExtractToDirectory(tempZip, installRoot);
         File.Delete(tempZip);
+
+        // 便携 zip 自带一层顶层文件夹（如 "SCRAM Box App/"）—— 解压后摊平一层，
+        // 保证安装结果与扁平包一致（2026-09-30 zip 加夹层配套改动）。
+        if (!File.Exists(appExe))
+        {
+            string[] subDirectories = Directory.GetDirectories(installRoot);
+            if (subDirectories.Length == 1)
+            {
+                string wrapper = subDirectories[0];
+                foreach (string entry in Directory.GetFileSystemEntries(wrapper))
+                {
+                    string target = Path.Combine(installRoot, Path.GetFileName(entry));
+                    if (Directory.Exists(entry))
+                    {
+                        Directory.Move(entry, target);
+                    }
+                    else
+                    {
+                        File.Move(entry, target);
+                    }
+                }
+                Directory.Delete(wrapper, true);
+            }
+        }
 
         if (!File.Exists(appExe))
         {

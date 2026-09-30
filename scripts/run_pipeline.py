@@ -16,7 +16,9 @@ from app.services.run_service import RunService
 def main() -> int:
     config = ConfigModel(ROOT).new_default()
     runner = RunService(ROOT)
-    rows = runner.run_batch_comparison(config)
+    # 2026-09-30：案例预设已删除 ⇒ 原先按预设名跑四组（run_batch_comparison）不再有意义，
+    # 改为对当前配置跑一次内外混对比（过程开关与时长由配置/界面直接给出，不再被预设改写）。
+    rows = runner.run_comparison(config, "pipeline")
     PlotService(ROOT).generate_all()
     ReportService(ROOT).generate()
     print(f"completed {len(rows)} runs")

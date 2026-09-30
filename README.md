@@ -302,13 +302,50 @@ The GUI keeps the current SCRAM config semantics intact:
 This pipeline runs the internal/external mixing comparison workflow, regenerates plots, and updates the Chinese report.
 In this repository, use the GUI compare workflow or `scripts/run_standard_tests.py` instead.
 
+### Results layout (2026-09-30, v2)
+
+One experiment (a "case"; the case name is the experiment name, the template id by default) owns exactly one
+self-describing directory under the results root (`app/services/results_layout.py` is the single source of truth):
+
+```
+<results root>/<case name>/
+    case.json              run manifest: mode (single/compare) + per-arm status/config/wallclock/final values
+    figures/               every figure of this case (11 for a two-arm compare, 6 for one arm)
+    csv/                   case-level summaries: final_state_summary.csv, performance_summary.csv
+    external_mixing/       one directory per arm (its presence means that arm was run)
+        run_config.cfg     the configuration actually sent to the core (archived, re-runnable in place)
+        csv/               core data + collected extras (fractions.txt, mass_init.txt, composition_grid.json)
+        logs/              run.log, report.txt
+    internal_mixing/       (same shape)
+```
+
+Rules worth remembering:
+
+- The case name appears **once** in the path; there is no `runs/<case>/` indirection and no `compare/` / `single/`
+  mode layer — the mode is metadata in `case.json`, so running "single" then "compare" for the same experiment
+  does not store the same numbers twice.
+- An arm never has an empty `figures/`: the core creates `csv/figures/logs` scaffolding at startup, and the app
+  removes the unused empty `figures/` during collection. All figures are drawn at the case level.
+- Re-running an experiment with the same name is **non-destructive**: the previous result is moved (same-volume
+  rename, no copy) to `<results root>/history/<case>_<timestamp>/` and the case directory is then filled with the
+  new run, so it never mixes arms from different runs and no data is lost. The latest 3 snapshots per experiment
+  are kept (`SCRAM_CASE_HISTORY_KEEP`, 0 = keep none); snapshots are listed in the GUI as `[history] ...`.
+- Size control: the core also dumps per-cell x per-species coagulation deltas (`coag_delta_mass.csv`,
+  `coag_delta_number.csv`; 348 MB / 11 MB for a 743-step case) that nothing in the app or the scripts reads.
+  They are deleted right after a run - set `SCRAM_KEEP_COAG_DELTAS=1` when debugging redistribution.
+- The default results root is `<user state>/scram_boxapp_mixing/results` (the older
+  `.../results/internal_external_mixing` layer was dropped; a stored setting pointing at the old default is
+  migrated automatically). The root is configurable in the settings page.
+
 ## Report behavior
 
 - The GUI does not expose a user-facing LaTeX path field.
 - PDF reports work offline through the built-in matplotlib/PdfPages backend.
 - If `xelatex` or `tectonic` is available, the app first tries the LaTeX backend and automatically falls back to the built-in backend on failure.
 - Optional LaTeX installers are provided in `dist/windows/dependencies/` and copied into `report_dependencies/` in the packaged app.
-- The report generator reads `performance_summary.csv` and `final_state_summary.csv` from the current results directory.
+- The report generator reads `performance_summary.csv` and `final_state_summary.csv` from the selected case
+  directory's `csv/` folder, and writes its output into that same case directory (`<case>/report/`), so every
+  experiment keeps its own `<case>_report.pdf` instead of overwriting one global report.
 - Those summary files are written only after a run completes successfully.
 - `performance_summary.csv` is written for a completed run batch; `final_state_summary.csv` is written when both `INTERNAL_MIXING` and `EXTERNAL_MIXING` results exist for the same case.
 - If you run a single scheme or the simulation aborts early, the report step will not find both files.

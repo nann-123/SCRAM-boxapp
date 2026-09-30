@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
-from math import sqrt
+from math import pi, sqrt
 from pathlib import Path
 from typing import Any
 
@@ -99,7 +99,6 @@ class ConfigModel:
             "fraction_bounds": [],
             "mapping_scheme": "DETERMINISTIC_NEAREST",
             "mixing_assumption": "EXTERNAL_MIXING",
-            "case_preset": "coag_only",
             "template_name": "tutorial_minimal",
         }
         for field in self.schema["scalar_fields"]:
@@ -268,13 +267,10 @@ class ConfigModel:
             "fraction_bounds": [float(value) for value in data["fraction_bounds"]],
             "mapping_scheme": data.get("mapping_scheme", "DETERMINISTIC_NEAREST"),
             "mixing_assumption": data.get("mixing_assumption", "EXTERNAL_MIXING"),
-            "case_preset": data.get("case_preset", "coag_only"),
             "template_name": data.get("template_name", "tutorial_minimal"),
-            # Bug #19 修复（2026-09-23）：必须保留 explicit_keys。
-            # 原先这里构造成"只含固定键的新字典"，会把调用方刚算好的 explicit_keys 静默丢掉
-            # ⇒ GUI 路径上传给 prepare_run 的永远是空集 ⇒ 案例预设无条件覆盖用户设置
-            # （#11 的修复在 GUI 上失效）。normalize 是唯一稳妥的位置：
-            # _with_mixing_assumption 与 _with_case_preset 内部都会再调一次 normalize。
+            # explicit_keys 原是为「案例预设不得覆盖用户显式改动」服务的（Bug #11/#19）；
+            # 2026-09-30 预设删除后它已无消费者，这里保留键位只为兼容旧数据集/旧脚本的
+            # 存档（历史 JSON 里带这个键），值不再被任何逻辑读取。
             "explicit_keys": [str(key) for key in (data.get("explicit_keys") or [])],
         }
         normalized["scalars"]["n_species"] = int(normalized["scalars"]["n_species"])
@@ -416,6 +412,35 @@ class ConfigModel:
                     "provide non-zero per-bin masses, or set tag_init=0 to use the built-in "
                     "scenario distributions"
                 )
+
+            # U-06b（2026-09-30）：逐档「质量 ↔ 粒子数」不自洽。SCRAM1.2 的重心重分布
+            # （ModuleConservativeRemap12.f90 的 moving_center_dualpivot）按「该档干体积 ÷ 该档个数」
+            # 反推粒子中心粒径；中心落在本档区间外时，它会把这一档的质量与个数一起、守恒地搬到
+            # 中心所属的两个支点档。初值不自洽（例如质量按第 5–6 档配、个数按第 4 档配）时，
+            # 末态分布会被静默改写成另一个样子 —— 实测：teaching 老化案例写在第 5–6 档的质量
+            # 在 12 h 后出现在第 2–3 档，绘图忠实反映了这个被改写的结果，看起来像"图错了"。
+            # 这里用内核同一判据在运行前拦下。密度用 fixed_density（tagrho=1 的真实密度布局
+            # 是近似：内核按各物种真实密度算体积加权平均）。
+            fixed_density = float(scalars.get("fixed_density", 1800.0))
+            rho = fixed_density * 1.0e-9  # kg/m^3 -> ug/um^3（内核内部单位，1.8e-6 = 1800 kg/m3）
+            bounds = normalized["diameter_bounds"]
+            for index, number in enumerate(normalized["init_bin_number"]):
+                number = float(number)
+                mass = sum(float(record["bin_values"][index]) for record in normalized["species_records"])
+                if number <= 0.0 or mass <= 0.0 or rho <= 0.0:
+                    continue
+                center = (6.0 * (mass / rho) / (number * pi)) ** (1.0 / 3.0)
+                if center < bounds[index] or center > bounds[index + 1]:
+                    errors.append(
+                        f"size bin {index + 1}: initial number {number:.6g} with per-bin mass {mass:.6g} "
+                        f"implies a mean particle diameter of {center * 1000.0:.2f} nm, outside this bin's "
+                        f"range {bounds[index] * 1000.0:.2f}-{bounds[index + 1] * 1000.0:.2f} nm. The SCRAM1.2 "
+                        "moving-center redistribution derives each section center from mass/number and will "
+                        "re-bin that whole section (conservatively), silently rewriting the size distribution: "
+                        "mass written in the high bins comes out in the low bins. Make them consistent first - "
+                        "per-bin mass = N*(pi/6)*d^3*fixed_density with d inside the bin (same rule as "
+                        "examples/configs/default_config.cfg) (U-06b)"
+                    )
 
         # U-07（P-02）：论文验证模式把 EBC/ESO4 钉死在 2/4 号物种槽（INC/pointer.inc 编译期常量，
         # 内核只认槽号、不认布局）。布局不对时静默失效：初始总质量只剩一半、硫酸源进不来、

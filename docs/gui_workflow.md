@@ -2,7 +2,7 @@
 
 1. 启动软件，默认进入 `gmd_paris_full` Greater Paris 场景 D。这个模板包含非零初始质量、气相浓度和排放数据，适合作为标准实验起点。
 2. 顶部工具栏可以直接执行：新建实验、载入实验、保存实验、运行当前混合假设、比较 internal/external、停止、查看结果、导出报告。
-3. 在 `实验设置 / Experiment Setup` 页面中选择模板、案例预设和混合假设。可选混合假设为 `INTERNAL_MIXING` 与 `EXTERNAL_MIXING`；初值按载入 cfg 的 `n_frac` 反推，可手动切换，切换结果（含被程序改写的项）即时显示在预览框。
+3. 在 `实验设置 / Experiment Setup` 页面中选择模板和混合假设（过程开关与时长由模板载入后直接给在控件里，可改）。可选混合假设为 `INTERNAL_MIXING` 与 `EXTERNAL_MIXING`；初值按载入 cfg 的 `n_frac` 反推，可手动切换，切换结果（含被程序改写的项）即时显示在预览框。
 4. 根据实验需要调整凝并、冷凝/蒸发、成核开关，以及模拟时长、温度、压力、湿度和输出目录（最小时间步为死控件、已置灰）。
 5. 在 `结构编辑 / Structure Editor` 页面中检查或修改 `Species`、`Size bins`、`Fraction`、`Emission`、`Initial mass` 表格。载入 cfg 后，初始气相浓度和初始质量矩阵应直接回填到表格。
 6. 点击 `运行当前混合假设` 可只运行当前选择；点击 `比较 internal / external` 会连续运行两种混合假设并生成对比结果。

@@ -47,7 +47,8 @@ from app.config_binding.config_model import ConfigModel
 from app.services.i18n_service import I18nService
 from app.services.plot_service import PlotService
 from app.services.report_service import ReportService
-from app.services.run_service import CASE_PRESETS, RunService
+from app.services.run_service import RunService
+from app.services import results_layout
 from app.services.settings_service import SettingsService
 from app.services.template_service import TemplateService
 
@@ -70,7 +71,7 @@ class RunWorker(QThread):
                 self.stage_changed.emit(prepared)
                 rows.append(self.run_service.run_prepared(prepared, log_callback=self.message.emit))
             if rows:
-                self.run_service.write_summaries(rows, output_root=Path(self.prepared_runs[0]["run_root"]).parents[2])
+                self.run_service.finalize_case(Path(self.prepared_runs[0]["case_root"]), rows)
             self.completed.emit(rows)
         except Exception as exc:  # pragma: no cover - UI path
             self.failed.emit(str(exc))
@@ -80,11 +81,12 @@ class MainWindow(QMainWindow):
     def __init__(self, root: Path) -> None:
         super().__init__()
         self.root = root
-        self.app_version = "0.3.0"
+        self.app_version = "1.2"
         self.config_model = ConfigModel(root)
         self.template_service = TemplateService(root)
         self.run_service = RunService(root)
         self.plot_service = PlotService(root)
+        self._structure_prev: dict = {}
         self.report_service = ReportService(root)
         self.settings_service = SettingsService(root)
         self.settings = self.settings_service.load()
@@ -146,7 +148,60 @@ class MainWindow(QMainWindow):
             elif isinstance(widget, QComboBox):
                 widget.currentIndexChanged.connect(self._sync_visibility)
         for spin in (self.n_species_spin, self.n_sizebin_spin, self.n_frac_spin):
-            spin.valueChanged.connect(self._sync_visibility)
+            self._structure_prev[id(spin)] = spin.value()
+            spin.valueChanged.connect(self._on_structure_spin_changed)
+
+    def _on_structure_spin_changed(self) -> None:
+        """结构数字变更：手工编辑的组成档/粒径边界会被均分重置前，先弹二次确认（2026-09-30 用户要求）。"""
+        spin = self.sender()
+        known = (self.n_species_spin, self.n_sizebin_spin, self.n_frac_spin)
+        if spin not in known:
+            self._sync_visibility()
+            return
+        if getattr(self, "_loading_widgets", False):
+            self._structure_prev[id(spin)] = spin.value()
+            self._sync_visibility()
+            return
+        warning = self._structure_reset_warning(spin)
+        if warning is not None:
+            if QMessageBox.question(
+                self, self.i18n.t("structure_reset_title"), warning, QMessageBox.Yes | QMessageBox.No
+            ) != QMessageBox.Yes:
+                previous = self._structure_prev.get(id(spin), spin.value())
+                spin.blockSignals(True)
+                spin.setValue(int(previous))
+                spin.blockSignals(False)
+                self._sync_visibility()
+                return
+        self._structure_prev[id(spin)] = spin.value()
+        self._sync_visibility()
+
+    def _structure_reset_warning(self, spin) -> str | None:
+        """返回重置警示文案；当前边界本来就是均分/对数（无手写值可丢）时返回 None。"""
+        data = self.data or {}
+        if spin is self.n_frac_spin:
+            bounds = [float(value) for value in (data.get("fraction_bounds") or [])]
+            n_old = len(bounds) - 1
+            n_new = self.n_frac_spin.value()
+            if n_new == n_old or n_old < 1:
+                return None
+            step = 1.0 / n_old
+            uniform = [round(index * step, 6) for index in range(n_old + 1)]
+            uniform[-1] = 1.0
+            if bounds == uniform:
+                return None
+            extra = self.i18n.t("structure_reset_mixing_note") if (n_old == 1) != (n_new == 1) else ""
+            return self.i18n.t("structure_reset_frac").format(old=n_old, new=n_new) + extra
+        if spin is self.n_sizebin_spin:
+            bounds = [float(value) for value in (data.get("diameter_bounds") or [])]
+            n_old = len(bounds) - 1
+            n_new = self.n_sizebin_spin.value()
+            if n_new == n_old or n_old < 1:
+                return None
+            if bounds == self.config_model._logspace_bounds(n_old):
+                return None
+            return self.i18n.t("structure_reset_sizebin").format(old=n_old, new=n_new)
+        return None
 
     def _rebuild_ui(self) -> None:
         self.data = self._collect_data()
@@ -225,9 +280,6 @@ class MainWindow(QMainWindow):
         template_layout.addWidget(self.load_template_button)
         self.template_description = QLabel()
         self.template_description.setWordWrap(True)
-        self.case_preset_combo = QComboBox()
-        self.case_preset_combo.addItems(list(CASE_PRESETS))
-        self.case_preset_combo.currentTextChanged.connect(self.apply_case_preset)
         self.mapping_scheme_combo = QComboBox()
         self.mapping_scheme_combo.addItems(["INTERNAL_MIXING", "EXTERNAL_MIXING"])
         self.mapping_scheme_combo.currentIndexChanged.connect(self._sync_visibility)
@@ -250,7 +302,6 @@ class MainWindow(QMainWindow):
         experiment_form.addRow("", exp_hint)
         experiment_form.addRow(self.i18n.t("template_preset"), template_row)
         experiment_form.addRow(self.i18n.t("template_note"), self.template_description)
-        experiment_form.addRow(self.i18n.t("case_preset"), self.case_preset_combo)
         experiment_form.addRow(self.i18n.t("mapping_scheme"), self.mapping_scheme_combo)
         experiment_form.addRow("", self.scheme_detail_widget)
         cards.addWidget(experiment_card, 0, 0)
@@ -317,6 +368,15 @@ class MainWindow(QMainWindow):
         environment_form.addRow(self.i18n.t("temperature"), self.field_widgets["temperature"])
         environment_form.addRow(self.i18n.t("pressure"), self.field_widgets["pressure"])
         environment_form.addRow(self.i18n.t("humidity"), self.field_widgets["humidity"])
+        # U-03 处置（2026-09-29，方案 b′）：tag_init 显式两档。09-30 从结构编辑页移入实验页
+        # 环境卡片 —— 它是「环境状态」的总开关，两处分置曾让用户找不到开关、误以为环境状态失效。
+        tag_init_label = QLabel(self.i18n.t("tag_init_source"))
+        self.field_widgets["tag_init"] = QComboBox()
+        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_binmass"), 1)
+        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_scenario"), 0)
+        self.field_widgets["tag_init"].setToolTip(self.i18n.t("tag_init_tip"))
+        self.field_widgets["tag_init"].currentIndexChanged.connect(self._on_tag_init_changed)
+        environment_form.addRow(tag_init_label, self.field_widgets["tag_init"])
         environment_form.addRow(self.i18n.t("init_scenario"), self.scenario_combo)
         environment_form.addRow(self.i18n.t("mixing_state"), self.tag_external_box)
         environment_form.addRow(self.i18n.t("density_mode"), self.tagrho_combo)
@@ -369,13 +429,9 @@ class MainWindow(QMainWindow):
         nucl_box = QGroupBox(self.i18n.t("nucl_card"))
         nucl_box_layout = QVBoxLayout(nucl_box)
         nucl_box_layout.addWidget(self.nucl_only_widget)
-        self.external_only_widget = QWidget()
-        external_form = QFormLayout(self.external_only_widget)
+        # 09-30 UI 重组：「组分组数」(n_groups) 移入结构编辑页数字区后，"外混相关"卡只剩
+        # 这一个控件，整卡取消（advanced_grid 相应从四列减为三列）。
         self.field_widgets["n_groups"] = self._int_spin(1, 20)
-        external_form.addRow(self.i18n.t("n_groups"), self.field_widgets["n_groups"])
-        external_box = QGroupBox(self.i18n.t("external_card"))
-        external_box_layout = QVBoxLayout(external_box)
-        external_box_layout.addWidget(self.external_only_widget)
 
         self.grid_only_widget = QWidget()
         grid_form = QFormLayout(self.grid_only_widget)
@@ -398,8 +454,7 @@ class MainWindow(QMainWindow):
         grid_box_layout.addWidget(self.grid_only_widget)
         advanced_grid.addWidget(cond_box, 0, 0)
         advanced_grid.addWidget(nucl_box, 0, 1)
-        advanced_grid.addWidget(external_box, 0, 2)
-        advanced_grid.addWidget(grid_box, 0, 3)
+        advanced_grid.addWidget(grid_box, 0, 2)
         advanced_layout.addLayout(advanced_grid)
         cards.addWidget(advanced_card, 1, 1, 1, 2)
 
@@ -440,15 +495,11 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.generate_structure_button, 0, 6)
         controls_layout.addWidget(self.rebuild_structure_button, 0, 7)
         controls_layout.addWidget(self.logspace_button, 0, 8)
-        # U-03 处置（2026-09-29，方案 b′）：tag_init 从"界面完全没有"改为显式两档 ——
-        # 给用户初值来源的选择权，环境状态下拉只有在 tag_init=0 时才参与数值（tooltip 已说明）。
-        controls_layout.addWidget(QLabel(self.i18n.t("tag_init_source")), 1, 0)
-        self.field_widgets["tag_init"] = QComboBox()
-        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_binmass"), 1)
-        self.field_widgets["tag_init"].addItem(self.i18n.t("tag_init_scenario"), 0)
-        self.field_widgets["tag_init"].setToolTip(self.i18n.t("tag_init_tip"))
-        self.field_widgets["tag_init"].currentIndexChanged.connect(self._on_tag_init_changed)
-        controls_layout.addWidget(self.field_widgets["tag_init"], 1, 1)
+        # 09-30 UI 重组：「组分组数」(n_groups) 从实验页"外混相关"卡移入结构数字区 ——
+        # 它与物种数/粒径档数/组成档数同为结构参数，不再分居两页。
+        controls_layout.addWidget(QLabel(self.i18n.t("n_groups")), 1, 0)
+        controls_layout.addWidget(self.field_widgets["n_groups"], 1, 1)
+        # （tag_init「初值来源」下拉 09-30 移至实验页环境卡片，与「环境状态」成对放置）
         outer.addWidget(controls)
 
         structure_help_label = QLabel(self.i18n.t("structure_help"))
@@ -543,8 +594,12 @@ class MainWindow(QMainWindow):
         layout.addWidget(summary_card)
 
         controls = QHBoxLayout()
+        # 09-30：「运行记录」下拉列出结果根下的全部案例目录（<根>/<案例名>/），
+        # 矩阵/历史结果重开 UI 也能浏览（原先只看全局根，根下没有 runs/figures 时页面全空）。
+        self.results_run_combo = QComboBox()
+        self.results_run_combo.currentIndexChanged.connect(self._on_results_run_selected)
         self.results_case_combo = QComboBox()
-        self.results_case_combo.currentTextChanged.connect(self.refresh_results_summary)
+        self.results_case_combo.currentTextChanged.connect(self._on_results_case_selected)
         self.compare_results_button = QPushButton(self.i18n.t("compare_results"))
         self.compare_results_button.clicked.connect(self.refresh_results_summary)
         self.export_summary_button = QPushButton(self.i18n.t("export_summary_csv"))
@@ -553,6 +608,8 @@ class MainWindow(QMainWindow):
         self.open_output_button.clicked.connect(self.open_output_directory)
         self.open_figures_button = QPushButton(self.i18n.t("open_figures"))
         self.open_figures_button.clicked.connect(self.open_figure_directory)
+        controls.addWidget(QLabel(self.i18n.t("results_run")))
+        controls.addWidget(self.results_run_combo)
         controls.addWidget(QLabel(self.i18n.t("current_case")))
         controls.addWidget(self.results_case_combo)
         controls.addWidget(self.compare_results_button)
@@ -612,9 +669,9 @@ class MainWindow(QMainWindow):
         self.generate_report_button = QPushButton(self.i18n.t("generate_report"))
         self.generate_report_button.clicked.connect(self.generate_report)
         self.open_tex_button = QPushButton(self.i18n.t("open_tex"))
-        self.open_tex_button.clicked.connect(lambda: self.open_path(self.report_service.report_root / "internal_external_mixing_report.tex"))
+        self.open_tex_button.clicked.connect(lambda: self.open_path(self.report_service.tex_path()))
         self.open_pdf_button = QPushButton(self.i18n.t("open_pdf"))
-        self.open_pdf_button.clicked.connect(lambda: self.open_path(self.report_service.report_root / "internal_external_mixing_report.pdf"))
+        self.open_pdf_button.clicked.connect(lambda: self.open_path(self.report_service.pdf_path()))
         row.addWidget(self.generate_report_button)
         row.addWidget(self.open_tex_button)
         row.addWidget(self.open_pdf_button)
@@ -692,11 +749,6 @@ class MainWindow(QMainWindow):
                 self.template_combo.setCurrentIndex(idx)
                 break
         self._update_template_description()
-        self.case_preset_combo.blockSignals(True)
-        matched = self.data.get("case_preset") or ""
-        idx = self.case_preset_combo.findText(matched)
-        self.case_preset_combo.setCurrentIndex(idx if idx >= 0 else -1)
-        self.case_preset_combo.blockSignals(False)
         # U-01 修复（2026-09-29）：下拉初始值来自 cfg 反推（config_model.parse 按 n_frac），
         # 但**不再锁定** —— 手改允许，预览会显示程序实际送核的配置（含改写项）。
         self.mapping_scheme_combo.blockSignals(True)
@@ -760,7 +812,6 @@ class MainWindow(QMainWindow):
         data = self.config_model.normalize(self.data)
         data["experiment_name"] = self.experiment_name_edit.text().strip() or "experiment"
         data["template_name"] = str(self.template_combo.currentData())
-        data["case_preset"] = self.case_preset_combo.currentText()
         data["mixing_assumption"] = self.mapping_scheme_combo.currentText()
         # U-02 修复（2026-09-29）：mapping_scheme 是独立配置，随载入的 cfg/模板走，
         # 不再在这里强写成 DETERMINISTIC_NEAREST（原写法让 cfg 字段永不生效）。
@@ -780,24 +831,6 @@ class MainWindow(QMainWindow):
         # nucl_model / tag_init 现在是下拉框（U-07/U-03），不在上面 QSpinBox 循环覆盖范围内
         data["scalars"]["nucl_model"] = int(self.field_widgets["nucl_model"].currentData())
         data["scalars"]["tag_init"] = int(self.field_widgets["tag_init"].currentData())
-        # Bug #11 修复（2026-09-11）：把与当前 Case Preset 建议值不同的键标记为"显式"，
-        # 运行时不会被预设覆盖——用户改过开关/时长，就按用户的跑；与预设一致时不标记，
-        # 保持原有行为（选了预设即套用其过程与时长）。
-        # Bug #19 修复（2026-09-23）：
-        #   ① 改为**每次重新计算**，不再继承上一轮的标记。否则用户换案例预设后，旧标记仍然
-        #      生效，新预设的建议值永远进不来（例如上一轮把时长标成显式，之后换预设不生效）。
-        #   ② normalize() 现已保留该键，所以这里算好的集合能一路传到 prepare_run。
-        explicit: set[str] = set()
-        preset = CASE_PRESETS.get(str(data.get("case_preset", "")))
-        if preset:
-            for key, preset_key in (("with_coag", "with_coag"), ("with_cond", "with_cond"),
-                                    ("with_nucl", "with_nucl"), ("final_time_hours", "duration_hours")):
-                try:
-                    if abs(float(data["scalars"][key]) - float(preset[preset_key])) > 1e-9:
-                        explicit.add(key)
-                except (KeyError, TypeError, ValueError):
-                    explicit.add(key)
-        data["explicit_keys"] = sorted(explicit)
         data["scalars"]["n_species"] = self.n_species_spin.value()
         data["scalars"]["n_sizebin"] = self.n_sizebin_spin.value()
         data["scalars"]["n_frac"] = self.n_frac_spin.value()
@@ -864,7 +897,7 @@ class MainWindow(QMainWindow):
     def _render_preview_text(self) -> str:
         """U-18 修复（2026-09-29）：预览 = 实际送核的配置。
 
-        原来画的是 _collect_data() 的"改写前"样子，而混合假设/案例预设的改写发生在
+        原来画的是 _collect_data() 的"改写前"样子，而混合假设的改写发生在
         prepare_run 内部 ⇒ 预览与实跑不一致（混合假设下拉因此做成静默弹回）。
         现在预览与运行共用 transform_config 管线，并加三行头注说明改写项与两臂差异。
         """
@@ -884,7 +917,45 @@ class MainWindow(QMainWindow):
         # 用户看不见 —— 模式激活时在头注里显式声明。
         if int(transformed["scalars"].get("nucl_model", 0)) == 5:
             header += "# 论文验证模式（nucl_model=5）：物种表已锁定为 30 物种 baseline 布局（2 号=BC、4 号=SO4）\n"
-        return header + self.config_model.serialize_text(transformed)
+        text = header + self.config_model.serialize_text(transformed)
+        # 09-30 用户反馈"nl5 预览太复杂"：论文验证模式下把同构的长数据行块（30 物种表等）
+        # 折叠为首两行 + 省略说明 + 末行；完整内容始终随保存的 cfg 提供。
+        if int(transformed["scalars"].get("nucl_model", 0)) == 5:
+            text = self._collapse_preview_data_rows(text)
+        return text
+
+    @staticmethod
+    def _is_preview_data_row(line: str) -> bool:
+        """cfg 里的"数据行"：数字开头、≥4 个数字字段、带 ## 注释（物种行/逐档行）。"""
+        stripped = line.strip()
+        if "##" not in stripped:
+            return False
+        head = stripped.split("##", 1)[0].split()
+        return len(head) >= 4 and head[0].lstrip("-").replace(".", "").isdigit()
+
+    def _collapse_preview_data_rows(self, text: str, min_rows: int = 8) -> str:
+        lines = text.splitlines()
+        out: list[str] = []
+        block: list[str] = []
+
+        def flush() -> None:
+            if len(block) > min_rows:
+                comment = block[0].split("##", 1)[1].strip() if "##" in block[0] else "数据行"
+                out.extend(block[:2])
+                out.append(f"　……（中间 {len(block) - 3} 行同构数据折叠：{comment}；完整内容见保存的 cfg）")
+                out.append(block[-1])
+            else:
+                out.extend(block)
+            block.clear()
+
+        for line in lines:
+            if self._is_preview_data_row(line):
+                block.append(line)
+            else:
+                flush()
+                out.append(line)
+        flush()
+        return "\n".join(out)
 
     def _on_table_cell_changed(self, _table: QTableWidget) -> None:
         """Update config preview when any structure-editor table cell is edited."""
@@ -902,7 +973,7 @@ class MainWindow(QMainWindow):
         self.legacy_note.setVisible(scheme == "INTERNAL_MIXING")
         self.cond_only_widget.setVisible(bool(with_cond) and ui_mode == "advanced")
         self.nucl_only_widget.setVisible(bool(with_nucl) and ui_mode == "advanced")
-        self.external_only_widget.setVisible(bool(external) and ui_mode == "advanced")
+        # 09-30 UI 重组："外混相关"卡已取消，n_groups 常驻结构编辑页数字区，无需显隐切换。
         self.grid_only_widget.setVisible(ui_mode == "advanced")
         self.field_widgets["fixed_density"].setVisible(use_fixed_density)
         self.basic_mode_combo.parentWidget().setVisible(True)
@@ -1061,19 +1132,9 @@ class MainWindow(QMainWindow):
         template_id = str(self.template_combo.currentData())
         self.data = self.template_service.load_template(template_id)
         self.data["experiment_name"] = template_id
-        self.data["case_preset"] = self._match_case_preset(self.data)
         self.settings["last_template"] = template_id
         self.settings_service.save(self.settings)
         self.refresh_all()
-
-    def _match_case_preset(self, data: dict[str, Any]) -> str:
-        """Match process switches to the closest CASE_PRESETS entry."""
-        scalars = data["scalars"]
-        c, d, n = int(scalars["with_coag"]), int(scalars["with_cond"]), int(scalars["with_nucl"])
-        for name, preset in CASE_PRESETS.items():
-            if int(preset["with_coag"]) == c and int(preset["with_cond"]) == d and int(preset["with_nucl"]) == n:
-                return name
-        return ""
 
     def _on_tag_init_changed(self, *_args: object) -> None:
         """U-03（2026-09-29）：初值来源切换的界面联动。
@@ -1091,6 +1152,12 @@ class MainWindow(QMainWindow):
         self.initial_mass_table.setEnabled(not using_scenario)
         self.initial_mass_table.setToolTip(
             self.i18n.t("tag_init_mass_table_locked_tip") if using_scenario else ""
+        )
+        # 对称提示（09-30 用户反馈）：tag_init=1 时「环境状态」不参与数值，
+        # 原先只有 tooltip 没有视觉状态，看起来像"选了没反应"——现在直接禁用并换提示。
+        self.scenario_combo.setEnabled(using_scenario)
+        self.scenario_combo.setToolTip(
+            self.i18n.t("init_scenario_tip") if using_scenario else self.i18n.t("init_scenario_inert_tip")
         )
 
     def _on_nucl_model_changed(self, *_args: object) -> None:
@@ -1122,18 +1189,6 @@ class MainWindow(QMainWindow):
             self.i18n.t("nucl_model_layout_locked_tip") if paper_mode else ""
         )
 
-    def apply_case_preset(self, case_name: str) -> None:
-        preset = CASE_PRESETS.get(case_name)
-        if not preset:
-            return
-        self.with_coag_box.setChecked(bool(preset["with_coag"]))
-        self.with_cond_box.setChecked(bool(preset["with_cond"]))
-        self.with_nucl_box.setChecked(bool(preset["with_nucl"]))
-        cast_widget = self.field_widgets.get("final_time_hours")
-        if isinstance(cast_widget, QDoubleSpinBox):
-            cast_widget.setValue(float(preset["duration_hours"]))
-        self._sync_visibility()
-
     def load_config(self) -> None:
         path_text, _ = QFileDialog.getOpenFileName(self, self.i18n.t("load_config"), str(self.root / "core"), "Config (*.cfg)")
         if not path_text:
@@ -1141,7 +1196,6 @@ class MainWindow(QMainWindow):
         self.current_config_path = Path(path_text)
         self.data = self.config_model.parse(self.current_config_path)
         self.data["experiment_name"] = self.current_config_path.stem
-        self.data["case_preset"] = self._match_case_preset(self.data)
         self.data["template_name"] = "__custom__"
         recent = [path_text] + [str(item) for item in self.settings.get("recent_configs", []) if str(item) != path_text]
         self.settings["recent_configs"] = recent[:8]
@@ -1190,7 +1244,6 @@ class MainWindow(QMainWindow):
     def new_from_defaults(self) -> None:
         self.data = self.template_service.load_template("gmd_paris_full")
         self.data["experiment_name"] = "gmd_paris_full"
-        self.data["case_preset"] = self._match_case_preset(self.data)
         self.settings["last_template"] = "gmd_paris_full"
         self.settings_service.save(self.settings)
         self.refresh_all()
@@ -1246,34 +1299,28 @@ class MainWindow(QMainWindow):
         if errors:
             QMessageBox.warning(self, self.i18n.t("validate_config"), "\n".join(errors))
             return
-        mode_dir = "compare" if compare else "single"
         exp_name = self.experiment_name_edit.text().strip() or "experiment"
-        case_name = self.case_preset_combo.currentText().strip()
+        # 2026-09-30（预设删除 + 布局重构）：案例名 = 实验名（模板载入时默认就是模板 id），
+        # 目录一律是 <结果根>/<案例名>（不再有 single/、compare/ 两层模式目录，模式记进 case.json）。
         # U-08 修复（2026-09-29）：目录名 ASCII 化 —— 内核对非 ASCII 路径的可打开性未验证，
         # 直接绕开；纯 ASCII 名保持原样（ascii_name 是恒等变换）。
-        dir_name = self.run_service.ascii_name(f"{exp_name}_{case_name}" if case_name else exp_name)
-        output_root = self.current_results_root / mode_dir / dir_name
-        output_root.mkdir(parents=True, exist_ok=True)
-        self.plot_service.set_results_root(output_root)
-        self.report_service.set_results_root(output_root)
+        case_name = exp_name
+        # 注意语义：这里给的是**结果根**，案例目录 = <结果根>/<案例名>，由 prepare_case 推导
+        # （2026-09-30 修：此前把"案例目录"当 output_root 传，会多套一层同名目录）。
+        results_root = self.current_results_root
+        output_root = results_root
         schemes = ("INTERNAL_MIXING", "EXTERNAL_MIXING") if compare else (self.mapping_scheme_combo.currentText(),)
-        prepared_runs = [
-            self.run_service.prepare_run(self.data, case_name, scheme, output_root=output_root) for scheme in schemes
-        ]
+        # prepare_case 会先清空案例目录（同名实验重跑 = 覆盖，避免"一臂新一臂旧"的混装）
+        prepared_runs = self.run_service.prepare_case(self.data, case_name, schemes, output_root=output_root)
+        case_root = Path(prepared_runs[0]["case_root"])
+        self.current_run_output_root = case_root
+        self.plot_service.set_results_root(case_root)
+        self.report_service.set_results_root(case_root)
         # Bug #22 修复（2026-09-23）：归档必须用**变换之后**的数据，即与真正送给核心的 cfg 同源。
-        # 原实现在 prepare_run 之前序列化 self.data，而 prepare_run 内部还要跑
-        # _with_mixing_assumption（改 n_frac / fraction_bounds / tag_external / 组分离散）
-        # 与 _with_case_preset（改过程开关 / 时长）⇒ 归档与实跑是两份不同的配置，
-        # 用户照归档文件重跑会得到不同结果（可复现性缺陷）。
-        # 比较运行两臂各跑一份不同的 cfg，故逐臂各归档一份；
-        # 同时把第一臂写进 experiment_config.cfg，保持既有文件名约定不变。
-        auto_cfg = output_root / "experiment_config.cfg"
+        # 2026-09-30 布局重构：每臂的送核 cfg 现在归档在臂目录里（<案例>/<arm>/run_config.cfg，
+        # 由 prepare_run 写）；案例目录根再放一份第一臂的 experiment_config.cfg，保持旧文件名约定。
+        auto_cfg = case_root / "experiment_config.cfg"
         self.config_model.serialize(prepared_runs[0]["config_data"], auto_cfg)
-        for prepared in prepared_runs:
-            self.config_model.serialize(
-                prepared["config_data"],
-                output_root / f"experiment_config_{str(prepared['scheme']).lower()}.cfg",
-            )
         self.run_worker = RunWorker(self.run_service, prepared_runs)
         self.run_worker.stage_changed.connect(self._on_run_stage_changed)
         self.run_worker.message.connect(self._log)
@@ -1300,7 +1347,11 @@ class MainWindow(QMainWindow):
         self.monitor_timer.stop()
         self.progress.setValue(100 if rows else 0)
         self.monitor_labels["status"].setText(self.i18n.t("status_completed"))
-        self.plot_service.generate_all()
+        # 绘图必须用本次运行的输出根：运行期间任何控件刷新都会走 _collect_data 把绘图根
+        # 改回全局结果根，若不显式指定，图会全部画到根 figures/（全是旧案例的重画）、
+        # 本次运行目录反而没有图（09-30 用户实测）。同时结果分析页浏览根指向本次运行。
+        self.latest_run_root = self.current_run_output_root
+        self.plot_service.generate_all(self.latest_run_root)
         self.refresh_results_assets()
         if self.report_service.available():
             self.refresh_report_assets()
@@ -1344,21 +1395,82 @@ class MainWindow(QMainWindow):
         self.monitor_labels["latest_warning"].setText(str(metrics["latest_warning"]))
         self.monitor_labels["latest_file"].setText(str(metrics["latest_file"]))
 
+    def _results_browse_root(self) -> Path:
+        """结果分析页当前浏览的运行目录（由「运行记录」下拉选择）。"""
+        path = getattr(self, "results_browse_root", None)
+        return path if path is not None else self.current_results_root
+
+    def _iter_historical_runs(self) -> list[tuple[str, Path]]:
+        """列出全部历史实验：<根>/<案例名>/（2026-09-30 新布局，一个实验一个目录）。
+
+        标签带上 case.json 里记的运行模式，便于区分"只跑了一臂"和"两臂都跑过"。
+        更早的布局（<根>/compare|single/<案例>/runs/）不再列出 —— 重构时结果目录已清空重跑，
+        列出旧目录只会画出与新口径不符的图。
+        """
+        entries: list[tuple[str, Path]] = []
+        base = self.current_results_root
+        if not base.is_dir():
+            return entries
+        if (base / "runs").is_dir():
+            entries.append((self.i18n.t("results_run_root"), base))
+        for run_dir in sorted(base.iterdir(), key=lambda item: item.name):
+            if not results_layout.is_case_dir(run_dir):
+                continue
+            manifest = results_layout.read_manifest(run_dir)
+            mode = str(manifest.get("mode", "") or "")
+            label = f"{run_dir.name}（{mode}）" if mode else run_dir.name
+            entries.append((label, run_dir))
+        # 被覆盖的旧结果：<根>/history/<案例名>_<时间戳>/（重跑前自动搬运，默认保留 3 份/实验）
+        history = results_layout.history_root(base)
+        if history.is_dir():
+            for snapshot in sorted(history.iterdir(), key=lambda item: item.name, reverse=True):
+                if results_layout.is_case_dir(snapshot):
+                    entries.append((f"[历史] {snapshot.name}", snapshot))
+        return entries
+
     def refresh_results_assets(self) -> None:
-        self.plot_service.set_results_root(self.current_results_root)
+        self.results_run_combo.blockSignals(True)
+        self.results_run_combo.clear()
+        entries = self._iter_historical_runs()
+        for label, path in entries:
+            self.results_run_combo.addItem(label, str(path))
+        # 默认选中最近一次运行
+        pick = 0
+        latest = getattr(self, "latest_run_root", None)
+        if latest is not None:
+            for index in range(self.results_run_combo.count()):
+                if Path(self.results_run_combo.itemData(index)) == Path(latest):
+                    pick = index
+                    break
+        if self.results_run_combo.count():
+            self.results_run_combo.setCurrentIndex(pick)
+        self.results_run_combo.blockSignals(False)
+        self._on_results_run_selected()
+
+    def _on_results_run_selected(self, *_args: object) -> None:
+        path = self.results_run_combo.currentData()
+        self.results_browse_root = Path(path) if path else self.current_results_root
+        self.plot_service.set_results_root(self.results_browse_root)
+        # 报告跟着所选实验走：写进 <案例>/report/（每个实验一份，不互相覆盖）
+        self.report_service.set_results_root(self.results_browse_root)
         self.results_case_combo.blockSignals(True)
         self.results_case_combo.clear()
-        runs_root = self.current_results_root / "runs"
-        if runs_root.exists():
-            for case_dir in sorted(runs_root.glob("*")):
+        # 新布局：一个案例目录 = 一个案例；旧布局（<browse>/runs/<案例>/）仍兼容列出。
+        runs_root = self.results_browse_root / "runs"
+        if runs_root.is_dir():
+            for case_dir in sorted(runs_root.iterdir()):
                 if case_dir.is_dir():
                     self.results_case_combo.addItem(case_dir.name)
         if self.results_case_combo.count() == 0:
-            self.results_case_combo.addItem(self.case_preset_combo.currentText())
-        preferred = self.case_preset_combo.currentText()
+            self.results_case_combo.addItem(self.results_browse_root.name)
+        preferred = self.experiment_name_edit.text().strip() or ""
         index = self.results_case_combo.findText(preferred)
         self.results_case_combo.setCurrentIndex(index if index >= 0 else 0)
         self.results_case_combo.blockSignals(False)
+        self.refresh_results_lists_for_case(self.results_case_combo.currentText())
+        self.refresh_results_summary()
+
+    def _on_results_case_selected(self) -> None:
         self.refresh_results_lists_for_case(self.results_case_combo.currentText())
         self.refresh_results_summary()
 
@@ -1366,18 +1478,33 @@ class MainWindow(QMainWindow):
         self.figure_list.clear()
         self.csv_list.clear()
         self.log_list.clear()
-        for path in sorted((self.current_results_root / "figures").glob(f"{case_name}*.png")):
+        browse = self._results_browse_root()
+        # 2026-09-30：一个案例目录只有这一个案例 ⇒ 不再按名字前缀过滤图；
+        # 否则"跨臂"图（runtime_comparison、final_*_comparison 等不带案例名前缀）在结果页看不到。
+        for path in sorted(results_layout.figures_dir(browse).glob("*.png")):
             self.figure_list.addItem(path.name)
-        summary_path = self.current_results_root / "final_state_summary.csv"
-        perf_path = self.current_results_root / "performance_summary.csv"
-        if summary_path.exists():
-            self.csv_list.addItem(summary_path.name)
-        if perf_path.exists():
-            self.csv_list.addItem(perf_path.name)
-        for path in sorted((self.current_results_root / "runs" / case_name).glob("*/csv/*.csv")):
-            self.csv_list.addItem(str(path.relative_to(self.current_results_root)))
-        for path in sorted((self.current_results_root / "runs" / case_name).glob("*/logs/run.log")):
-            self.log_list.addItem(str(path.relative_to(self.current_results_root)))
+        summary_path = results_layout.case_csv_dir(browse) / "final_state_summary.csv"
+        perf_path = results_layout.case_csv_dir(browse) / "performance_summary.csv"
+        for path in (results_layout.manifest_path(browse), summary_path, perf_path):
+            if path.exists():
+                self.csv_list.addItem(str(path.relative_to(browse)))
+        # 臂目录直接挂在案例目录下（新布局）；旧的 <browse>/runs/<案例>/ 仍兼容列出。
+        arm_roots = list(results_layout.iter_arms(browse))
+        legacy_root = browse / "runs" / case_name
+        if legacy_root.is_dir():
+            arm_roots.extend(sorted(child for child in legacy_root.iterdir() if child.is_dir()))
+        for scheme_dir in sorted(arm_roots, key=lambda child: child.name):
+            csv_dir = scheme_dir / "csv"
+            if csv_dir.is_dir():
+                for path in sorted(csv_dir.glob("*.csv")):
+                    self.csv_list.addItem(str(path.relative_to(browse)))
+                mass_init = csv_dir / "mass_init.txt"
+                if mass_init.exists():
+                    self.csv_list.addItem(str(mass_init.relative_to(browse)))
+            log_dir = scheme_dir / "logs"
+            run_log = log_dir / "run.log"
+            if run_log.exists():
+                self.log_list.addItem(str(run_log.relative_to(browse)))
         if self.figure_list.count():
             self.figure_list.setCurrentRow(0)
         elif self.csv_list.count():
@@ -1386,10 +1513,10 @@ class MainWindow(QMainWindow):
     def refresh_results_summary(self) -> None:
         case_name = self.results_case_combo.currentText()
         self.refresh_results_lists_for_case(case_name)
-        summary_path = self.current_results_root / "final_state_summary.csv"
+        summary_path = results_layout.case_csv_dir(self._results_browse_root()) / "final_state_summary.csv"
         if not summary_path.exists():
             return
-        rows = [row for row in csv.DictReader(summary_path.open()) if row["case_name"] == case_name]
+        rows = [row for row in csv.DictReader(summary_path.open(encoding="utf-8", errors="replace")) if row["case_name"] == case_name]
         if not rows:
             return
         external = next((row for row in rows if row["scheme"] == "EXTERNAL_MIXING"), rows[0])
@@ -1405,9 +1532,11 @@ class MainWindow(QMainWindow):
     def refresh_report_assets(self) -> None:
         if not self.report_service.available():
             return
-        self.report_results_dir.setText(str(self.current_results_root))
+        browse = self._results_browse_root()
+        # 报告输出目录 = <案例>/report/（点"生成报告"后文件就落在这里）
+        self.report_results_dir.setText(str(self.report_service.report_root))
         self.report_figure_list.clear()
-        for path in sorted((self.current_results_root / "figures").glob("*.png")):
+        for path in sorted((browse / "figures").glob("*.png")):
             item = QListWidgetItem(path.name)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Checked)
@@ -1418,18 +1547,18 @@ class MainWindow(QMainWindow):
             return
         self.result_preview_title.setText(name)
         if kind == "figure":
-            path = self.current_results_root / "figures" / name
+            path = self._results_browse_root() / "figures" / name
             pixmap = QPixmap(str(path))
             self.figure_preview.setPixmap(pixmap.scaled(900, 480, Qt.KeepAspectRatio, Qt.SmoothTransformation))
             self.result_text_preview.setPlainText(path.name)
         elif kind == "csv":
-            path = self.current_results_root / name
+            path = self._results_browse_root() / name
             self.figure_preview.clear()
             self.result_text_preview.setPlainText(path.read_text(encoding="utf-8", errors="replace") if path.exists() else "")
         else:
-            path = self.current_results_root / name
+            path = self._results_browse_root() / name
             self.figure_preview.clear()
-            self.result_text_preview.setPlainText(path.read_text(encoding="utf-8", errors="ignore") if path.exists() else "")
+            self.result_text_preview.setPlainText(path.read_text(encoding="utf-8", errors="replace") if path.exists() else "")
 
     def generate_report(self) -> None:
         selected = []
@@ -1437,7 +1566,8 @@ class MainWindow(QMainWindow):
             item = self.report_figure_list.item(idx)
             if item.checkState() == Qt.Checked:
                 selected.append(item.text())
-        self.report_service.set_results_root(self.current_results_root)
+        # 报告落在当前浏览的那个实验目录里（结果分析页选中的案例）
+        self.report_service.set_results_root(self._results_browse_root())
         self.report_status_label.setText(self.i18n.t("report_generating"))
         self.statusBar().showMessage(self.i18n.t("report_generating"))
         try:
@@ -1468,7 +1598,7 @@ class MainWindow(QMainWindow):
         self.open_path(self.current_results_root)
 
     def open_figure_directory(self) -> None:
-        self.open_path(self.current_results_root / "figures")
+        self.open_path(results_layout.figures_dir(self._results_browse_root()))
 
     def open_summary_csv(self) -> None:
         self.open_path(self.current_results_root / "final_state_summary.csv")
@@ -1516,11 +1646,11 @@ class MainWindow(QMainWindow):
 6. 比较 internal / external：在运行监控页点击「比较」按钮，连续运行两种混合假设并生成对比图和 final_state_summary.csv。
 
    输出归档规则：
-   - 运行结果按「实验名称_案例预设」存入 single/ 或 compare/ 子目录。
+   - 运行结果按「实验名称」存成 <结果根>/<实验名称>/ 一个案例目录（案例名 = 目录名 = 图名前缀）。
    - 载入配置后实验名称自动设为配置文件名；运行前可手动修改。
-   - 同名实验再次运行会覆盖历史结果，请区分命名。
+   - 同名实验再次运行：上一份结果会整目录搬进 <结果根>/history/<实验名称>_<时间戳>/（每个实验保留最近 3 份），
+     当前目录始终是最新一次；结果页「运行记录」里历史快照会以 [历史] 前缀列出，可直接查看。
    - 无论「运行」还是「比较」，都会自动保存实验配置到结果目录下的 experiment_config.cfg。
-   - 案例预设会根据载入配置的实际过程开关（凝并/冷凝/成核）自动匹配。
 
 三、实验设置页
 1. 模板/预设：选择教学案例、GMD hazy 验证案例或 Greater Paris A/B/C/D 参考场景。
@@ -1599,7 +1729,7 @@ This desktop app wraps SCRAM as a workflow-oriented GUI for comparing internal m
 - Compare internal / external: click "Compare" on the Run Monitor tab to run both assumptions and generate comparison figures and final_state_summary.csv.
 
   Output archiving:
-  - Results are saved as 「experiment_name_case_preset」 under single/ or compare/.
+  - Results are saved as one case directory per experiment (<results root>/<experiment name>; the template id by default).
   - Loading a config sets the experiment name to the config filename; rename before running.
   - Reusing the same experiment name overwrites previous results — use distinct names.
   - Both Run and Compare auto-save the config as experiment_config.cfg in the output directory.
@@ -1704,10 +1834,10 @@ Choose GMD Greater Paris scenario D, run the internal/external comparison, inspe
         return "-" if math.isnan(value) else f"{value:.4e}"
 
     def _runtime_summary(self, case_name: str) -> str:
-        path = self.current_results_root / "performance_summary.csv"
+        path = self._results_browse_root() / "performance_summary.csv"
         if not path.exists():
             return "-"
-        rows = [row for row in csv.DictReader(path.open()) if row["case_name"] == case_name]
+        rows = [row for row in csv.DictReader(path.open(encoding="utf-8", errors="replace")) if row["case_name"] == case_name]
         if not rows:
             return "-"
         return " / ".join(f"{row['scheme']} {float(row['wallclock']):.2f}s" for row in rows)

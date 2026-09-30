@@ -101,12 +101,19 @@ def run_runtime_smoke(output_root: Path, template_name: str, case_name: str, ski
         _assert(math.isfinite(float(row["final_mass"])), f"{row['scheme']} final_mass is not finite")
         _assert(math.isfinite(float(row["final_number"])), f"{row['scheme']} final_number is not finite")
 
-    perf = output_root / "performance_summary.csv"
-    final = output_root / "final_state_summary.csv"
+    from app.services import results_layout
+
+    # 2026-09-30 新布局：结果根下每个实验一个目录（<根>/<案例名>/），
+    # 案例级汇总、图、臂目录都在这个案例目录里。
+    case_root = results_layout.case_root(output_root, runner.ascii_name(case_name))
+    case_csv = results_layout.case_csv_dir(case_root)
+    perf = case_csv / "performance_summary.csv"
+    final = case_csv / "final_state_summary.csv"
     _assert(perf.exists(), "performance_summary.csv was not written")
     _assert(final.exists(), "final_state_summary.csv was not written")
 
-    PlotService(ROOT).generate_all(output_root)
+    plot = PlotService(ROOT)
+    plot.generate_all(case_root)
     expected_figures = [
         "runtime_comparison.png",
         "final_mass_comparison.png",
@@ -116,14 +123,22 @@ def run_runtime_smoke(output_root: Path, template_name: str, case_name: str, ski
         f"{case_name}_relative_mass_vs_external.png",
         f"{case_name}_relative_number_vs_external.png",
         f"{case_name}_external_mixed_fraction.png",
-        f"{case_name}_external_mixing_mass_by_size.png",
+        f"{case_name}_external_composition_drift.png",
+        f"{case_name}_external_mixing_degree_by_size.png",
         "internal_vs_external_mixing_logic.png",
     ]
     for name in expected_figures:
-        _assert((output_root / "figures" / name).exists(), f"missing figure: {name}")
+        _assert((results_layout.figures_dir(case_root) / name).exists(), f"missing figure: {name}")
+    # 绘图核查（20260915 审计的持续化）：图上每一个数与数据源 CSV 独立重算逐项对账。
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import check_plot_data
+
+    plot_problems = check_plot_data.verify_plot_data(plot)
+    _assert(not plot_problems, "plot data check failed: " + " | ".join(plot_problems))
+    print("plot_data_check: ok")
     if not skip_report:
         report = ReportService(ROOT)
-        report.set_results_root(output_root)
+        report.set_results_root(case_root)
         if report.available():
             _tex_path, pdf_path = report.generate()
             _assert(pdf_path.exists(), f"missing report PDF: {pdf_path}")

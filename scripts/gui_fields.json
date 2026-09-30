@@ -38,11 +38,9 @@
       "label_key": "with_coag",
       "core_reads": true,
       "core_uses": true,
-      "rewritten_by": [
-        "case_preset"
-      ],
+      "rewritten_by": [],
       "known_defect": null,
-      "note": "#19 已修（2026-09-23）：normalize 保留 explicit_keys ⇒ 用户改过的开关不再被预设覆盖；未改动时仍按预设跑"
+      "note": "2026-09-30：案例预设已从界面与数据模型删除 ⇒ 本开关只由用户（或模板自带值）决定，不再有运行前改写"
     },
     {
       "key": "with_cond",
@@ -56,11 +54,9 @@
       "label_key": "with_cond",
       "core_reads": true,
       "core_uses": true,
-      "rewritten_by": [
-        "case_preset"
-      ],
+      "rewritten_by": [],
       "known_defect": null,
-      "note": "同上"
+      "note": "同上（2026-09-30 预设删除后不再被改写）"
     },
     {
       "key": "with_nucl",
@@ -75,11 +71,9 @@
       "label_key": "with_nucl",
       "core_reads": true,
       "core_uses": true,
-      "rewritten_by": [
-        "case_preset"
-      ],
+      "rewritten_by": [],
       "known_defect": null,
-      "note": "同上"
+      "note": "同上（2026-09-30 预设删除后不再被改写）"
     },
     {
       "key": "nucl_model",
@@ -430,11 +424,9 @@
       ],
       "core_reads": true,
       "core_uses": true,
-      "rewritten_by": [
-        "case_preset"
-      ],
+      "rewritten_by": [],
       "known_defect": null,
-      "note": "#19 已修（2026-09-23）：用户改过时长则不被预设覆盖"
+      "note": "2026-09-30：案例预设已删除 ⇒ 时长只由用户/模板值决定"
     },
     {
       "key": "dtmin_seconds",
@@ -690,20 +682,6 @@
       "note": "死配置：_coag_mapping_mode 判的是 scheme=='LEGACY'，而传入的实参是混合假设，条件永假 ⇒ 送给核心的 SCRAM_COEFF_REPARTITION_MODE 恒为 COAG_TARGET_NEAREST"
     },
     {
-      "key": "case_preset",
-      "label_key": "case_preset",
-      "widget": "combo",
-      "modes": [
-        "basic"
-      ],
-      "in_cfg": false,
-      "transforms": [
-        "case_preset"
-      ],
-      "valid_values_count": 11,
-      "note": "11 个预设，各自给 with_coag/with_cond/with_nucl/duration_hours 一组建议值"
-    },
-    {
       "key": "template_name",
       "label_key": "template_preset",
       "widget": "combo",
@@ -765,25 +743,10 @@
       "widget_null_reason": "内部标记，用户不可见",
       "dropped_by": [],
       "known_defect": null,
-      "note": "记录「用户显式改过哪些字段」，使案例预设不覆盖用户设置。#11 引入、**#19 已修（2026-09-23）**：normalize() 现已保留本键，且 _collect_data 改为每轮重新计算（不再继承上一轮标记）⇒ GUI 路径的显式设置真正生效"
+      "note": "2026-09-30：案例预设删除后本键已无消费者；normalize() 仍保留键位，只为兼容带该键的历史 JSON/脚本数据，任何逻辑都不再读取它"
     }
   ],
   "transforms": [
-    {
-      "name": "case_preset",
-      "where": "app/services/run_service.py:_with_case_preset",
-      "applies_when": "case_preset 能匹配上 CASE_PRESETS",
-      "rewrites": [
-        "with_coag",
-        "with_cond",
-        "with_nucl",
-        "final_time_hours"
-      ],
-      "respects": [
-        "explicit_keys"
-      ],
-      "note": "explicit_keys 里列出的字段保留用户值，其余用预设建议值覆盖"
-    },
     {
       "name": "mixing_assumption",
       "where": "app/services/run_service.py:_with_mixing_assumption",

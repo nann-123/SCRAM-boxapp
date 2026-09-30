@@ -49,6 +49,11 @@ GMD_TEMPLATES = (
 )
 SCHEMES = ("INTERNAL_MIXING", "EXTERNAL_MIXING")
 
+# 项目共享源码树（"项目核"的源码本体；Windows/Linux 同一路径，与暂存副本无关）。
+# 双平台对照的"同一份源码"判据以此处指纹为准 —— 暂存运行时的 manifest 在 Linux 侧
+# 不带 source 子树（历史缺口，runtime_manifest.source_sha256 会是空串）。
+SOURCE_TREE = ROOT / "core" / "executables_or_wrappers" / "runtime" / "windows" / "source" / "SCRAM1.2"
+
 # report.txt 的计数都挤在同一行（实测格式）：
 #   "Nub Nucl 0.000000E+00  Nub Coag 0.000000E+00 Mass Cond 0.000000  n_emis 2.701633E+08"
 # 所以必须取 token 后面**紧跟**的那个数，而不是行末最后一个数（否则全抓成 n_emis）。
@@ -92,6 +97,20 @@ def file_md5(path: Path) -> str:
     return digest.hexdigest()
 
 
+def compiler_versions() -> dict[str, str | None]:
+    """记录实际编译器版本（gfortran/gcc -dumpversion；不在 PATH 时记 None）。"""
+    versions: dict[str, str | None] = {}
+    for name in ("gfortran", "gcc"):
+        try:
+            completed = subprocess.run(
+                [name, "-dumpversion"], capture_output=True, text=True, check=True
+            )
+            versions[name] = completed.stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            versions[name] = None
+    return versions
+
+
 def git_commit() -> str:
     try:
         return subprocess.run(
@@ -105,10 +124,8 @@ def collect_one(run_service, template_service, config_model, template_id: str, s
                 hours: float | None, archive_dir: Path) -> dict:
     data = template_service.load_template(template_id)
     if hours is not None:
+        # 2026-09-30：案例预设删除后，时长就是 cfg 里的值本身，不再需要 explicit_keys 保护。
         data["scalars"]["final_time_hours"] = float(hours)
-        data.setdefault("explicit_keys", [])
-        if "final_time_hours" not in data["explicit_keys"]:
-            data["explicit_keys"] = sorted({*data["explicit_keys"], "final_time_hours"})
     initial_mass = sum(sum(record["bin_values"]) for record in data["species_records"])
     initial_number = sum(float(value) for value in data["init_bin_number"])
 
@@ -132,7 +149,6 @@ def collect_one(run_service, template_service, config_model, template_id: str, s
     row = {
         "template": template_id,
         "scheme": scheme,
-        "case_preset": data.get("case_preset", ""),
         "hours": float(prepared["total_sim_seconds"]) / 3600.0,
         "initial_total_mass": initial_mass,
         "initial_total_number": initial_number,
@@ -212,6 +228,12 @@ def main() -> int:
             "md5": file_md5(executable),
             "size": executable.stat().st_size,
         },
+        "source_tree": {
+            "root": SOURCE_TREE.relative_to(ROOT).as_posix(),
+            "sha256": run_service._source_tree_hash(SOURCE_TREE),
+            "note": "项目共享源码树指纹（与暂存副本无关）；双平台对照的'同一份源码'判据",
+        },
+        "compilers": compiler_versions(),
         "runtime_manifest": run_service.runtime_manifest(),
         "hours_override": args.hours,
         "templates": list(args.templates),

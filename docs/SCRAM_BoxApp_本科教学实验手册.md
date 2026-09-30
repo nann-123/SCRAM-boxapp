@@ -92,7 +92,6 @@ Greater Paris 场景 D 同时启用排放、凝并、冷凝/蒸发和成核，�
 ### 软件设置
 
 - 模板：`GMD Greater Paris scenario D (full dynamics)`
-- 案例预设：`gmd_paris_full`
 - 过程开关：凝并、冷凝/蒸发、成核全部启用
 - 模拟时长：`12 h`
 - 输出目录：建议使用小组专属目录，例如 `D:\scram_student\group01\lab01`
@@ -132,7 +131,6 @@ Greater Paris 场景 D 同时启用排放、凝并、冷凝/蒸发和成核，�
 ### 软件设置
 
 - 模板：`GMD Greater Paris scenario A (emission only)`
-- 案例预设：`gmd_paris_emission_only`
 - 过程开关：凝并关、冷凝/蒸发关、成核关
 - 运行方式：点击“比较 internal / external”
 
@@ -165,7 +163,6 @@ Greater Paris 场景 D 同时启用排放、凝并、冷凝/蒸发和成核，�
 ### 软件设置
 
 - 模板：`GMD Greater Paris scenario B (emission + coagulation)`
-- 案例预设：`gmd_paris_coagulation`
 - 过程开关：凝并开、冷凝/蒸发关、成核关
 
 ### 应观察到的现象
@@ -208,7 +205,6 @@ Greater Paris 场景 D 同时启用排放、凝并、冷凝/蒸发和成核，�
 ### 软件设置
 
 - 模板：`GMD Greater Paris scenario C (emission + condensation)`
-- 案例预设：`gmd_paris_condensation`
 - 过程开关：凝并关、冷凝/蒸发开、成核关
 
 ### 应观察到的现象
@@ -234,7 +230,6 @@ Greater Paris 场景 D 同时启用排放、凝并、冷凝/蒸发和成核，�
 ### 软件设置
 
 - 模板：`GMD Greater Paris scenario D (full dynamics)`
-- 案例预设：`gmd_paris_full`
 - 过程开关：凝并、冷凝/蒸发、成核全部开启
 
 ### 应观察到的现象
@@ -356,4 +351,3 @@ core\executables_or_wrappers\runtime\windows\.venv\Scripts\python.exe scripts\ru
 对应教学资产位于：
 
 `docs/undergrad_lab_assets`
-

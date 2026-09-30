@@ -12,30 +12,16 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 from app.config_binding.config_model import (
     REMAP_MODE_DUALPIVOT,
     SUPPORTED_REDISTRIBUTION_OPTIONS,
     ConfigModel,
 )
-from app.services import deployment_paths
-
-
-CASE_PRESETS = {
-    "tutorial_minimal": {"with_coag": 1, "with_cond": 0, "with_nucl": 0, "duration_hours": 0.25},
-    "coag_only": {"with_coag": 1, "with_cond": 0, "with_nucl": 0, "duration_hours": 0.5},
-    "coag_cond": {"with_coag": 1, "with_cond": 1, "with_nucl": 0, "duration_hours": 0.5},
-    "coag_cond_nucl": {"with_coag": 1, "with_cond": 1, "with_nucl": 1, "duration_hours": 0.5},
-    "baseline12h": {"with_coag": 1, "with_cond": 1, "with_nucl": 1, "duration_hours": 12.0},
-    "gmd_hazy_condensation": {"with_coag": 0, "with_cond": 1, "with_nucl": 0, "duration_hours": 12.0},
-    "gmd_hazy_coag_cond": {"with_coag": 1, "with_cond": 1, "with_nucl": 0, "duration_hours": 12.0},
-    "gmd_paris_emission_only": {"with_coag": 0, "with_cond": 0, "with_nucl": 0, "duration_hours": 12.0},
-    "gmd_paris_coagulation": {"with_coag": 1, "with_cond": 0, "with_nucl": 0, "duration_hours": 12.0},
-    "gmd_paris_condensation": {"with_coag": 0, "with_cond": 1, "with_nucl": 0, "duration_hours": 12.0},
-    "gmd_paris_full": {"with_coag": 1, "with_cond": 1, "with_nucl": 1, "duration_hours": 12.0},
-}
+from app.services import deployment_paths, results_layout
 
 
 MIXING_ASSUMPTIONS = ("INTERNAL_MIXING", "EXTERNAL_MIXING")
@@ -103,19 +89,15 @@ class RunService:
     def transform_config(self, config_data: dict[str, Any], scheme: str) -> dict[str, Any]:
         """把界面/载入的配置变成"实际送核"的配置（U-18 抽取）。
 
-        混合假设改写（n_frac/fraction_bounds/tag_external/kind_composition）与案例预设
-        补齐原来藏在 prepare_run 里，预览画不到 ⇒ 用户看到的 cfg 和实跑的 cfg 不一致。
-        现在预览与本函数共用同一条变换管线：预览说真话，prepare_run 只做路径/env 等副作用。
+        混合假设改写（n_frac/fraction_bounds/tag_external/kind_composition）原来藏在
+        prepare_run 里，预览画不到 ⇒ 用户看到的 cfg 和实跑的 cfg 不一致。现在预览与本函数
+        共用同一条变换管线：预览说真话，prepare_run 只做路径/env 等副作用。
+
+        2026-09-30（用户要求）：案例预设已删除 —— 过程开关与时长由模板/界面直接给出，
+        本函数不再改写 with_coag/with_cond/with_nucl/final_time_hours。
         """
-        explicit = {str(key) for key in (config_data.get("explicit_keys") or [])}
         data = self.config_model.normalize(config_data)
-        data = self._with_mixing_assumption(data, scheme)
-        # Apply case preset process switches and duration to the generated config.
-        preset_name = data.get("case_preset", "")
-        preset = CASE_PRESETS.get(preset_name) if preset_name else None
-        if preset is not None:
-            data = self._with_case_preset(data, preset, explicit)
-        return data
+        return self._with_mixing_assumption(data, scheme)
 
     def preview_transform(self, config_data: dict[str, Any], scheme: str) -> tuple[dict[str, Any], list[str], list[str]]:
         """U-18/U-05：返回 (变换后配置, 相对输入被改写的键, 两臂差异键)，预览与运行共用。"""
@@ -154,9 +136,11 @@ class RunService:
         return safe
 
     def prepare_run(self, config_data: dict[str, Any], case_name: str, scheme: str, output_root: Path | None = None) -> dict[str, Any]:
-        # Case preset provides suggested values to the GUI (via apply_case_preset),
-        # but the user may override them（Bug #11：显式设置优先）。
-        # 变换管线已抽到 transform_config（U-18），预览与这里共用。
+        """准备**单臂**运行：写该臂 cfg、建臂目录、装配环境。
+
+        案例目录的生命周期（清空 / 建 case.json）由 prepare_case() 负责；直接调用本函数
+        不会清空案例目录（探针类脚本需要这种"只加一个臂"的用法）。布局见 results_layout.py。
+        """
         data = self.transform_config(config_data, scheme)
         _, _, arm_diff_keys = self.preview_transform(config_data, scheme)
         safe_case = self.ascii_name(case_name)
@@ -168,9 +152,12 @@ class RunService:
         # 2026-09-29（U-19）：SCRAM_RESULTS_DIR 必须是绝对路径 —— 1.2 内核会读它
         # （ModuleCoeffRepartitionBoxmodel.f90:122），相对路径会被内核按它自己的 cwd 解析，
         # 结果收集读到错位产物（实测终态记账虚高 5/3）。这里统一 resolve 兜底。
-        run_root = Path(output_root or self.results_root).resolve() / "runs" / safe_case / scheme.lower()
-        (run_root / "csv").mkdir(parents=True, exist_ok=True)
-        (run_root / "logs").mkdir(parents=True, exist_ok=True)
+        case_root = results_layout.case_root(Path(output_root or self.results_root).resolve(), safe_case)
+        run_root = results_layout.arm_dir(case_root, scheme)
+        results_layout.arm_csv_dir(case_root, scheme).mkdir(parents=True, exist_ok=True)
+        results_layout.arm_logs_dir(case_root, scheme).mkdir(parents=True, exist_ok=True)
+        # 归档：该臂真正送核的 cfg 就放在臂目录里（结果自描述，可原地复现）
+        self.config_model.serialize(data, results_layout.arm_config_path(case_root, scheme))
         log_path = run_root / "logs" / "run.log"
         env = os.environ.copy()
         env.update(
@@ -200,6 +187,8 @@ class RunService:
             "runtime_config_path": runtime_config_path,
             "runtime_config_relpath": runtime_config_relpath,
             "run_root": run_root,
+            "case_root": case_root,
+            "safe_case": safe_case,
             "log_path": log_path,
             "env": env,
             "command": [str(executable), runtime_config_relpath.as_posix()],
@@ -237,6 +226,8 @@ class RunService:
                 "scheme": prepared["scheme"],
                 "status": "ok" if returncode == 0 else "failed",
                 "wallclock": wallclock,
+                # case_root：案例目录（新布局里就是"这个实验结果的家"），供 finalize_case 收尾用
+                "case_root": str(prepared["case_root"]),
                 "results_dir": str(prepared["run_root"]),
                 "log_path": str(prepared["log_path"]),
                 "config_path": str(prepared["config_path"]),
@@ -246,6 +237,51 @@ class RunService:
             log_callback(f"{prepared['case_name']} / {prepared['scheme']} finished with code {returncode}")
         return result
 
+    def prepare_case(self, config_data: dict[str, Any], case_name: str, schemes: Sequence[str],
+                     output_root: Path | None = None) -> list[dict[str, Any]]:
+        """按"一批运行"准备案例：旧结果先快照 → 逐臂准备 → 写 case.json 骨架。
+
+        同名实验重跑会把上一份结果**整目录搬**到 <结果根>/history/<案例名>_<时间戳>/ 再跑新的
+        （用户反馈："要用就不删了吧"）—— 每个实验默认保留最近 3 份快照（SCRAM_CASE_HISTORY_KEEP
+        可调，0 = 不留），搬运是同盘 rename，不复制、不额外占空间。
+        这样案例目录里既不会出现"一臂新、一臂旧"的混装，也不会因为重跑丢数据。
+        """
+        schemes = list(schemes)
+        safe_case = self.ascii_name(case_name)
+        case_root = results_layout.case_root(Path(output_root or self.results_root).resolve(), safe_case)
+        results_layout.snapshot_case_dir(case_root)
+        prepared = [self.prepare_run(config_data, case_name, scheme, output_root=output_root) for scheme in schemes]
+        results_layout.write_manifest(case_root, {
+            "layout": results_layout.LAYOUT_VERSION,
+            "case_name": safe_case,
+            "display_name": str(case_name),
+            "mode": "compare" if len(schemes) > 1 else "single",
+            "generated_at": datetime.now().isoformat(timespec="seconds"),
+            "runs": [{"scheme": str(scheme).upper(), "status": "pending"} for scheme in schemes],
+        })
+        return prepared
+
+    def finalize_case(self, case_root: Path, rows: list[dict[str, Any]]) -> None:
+        """一批运行结束后收尾：写案例级汇总（两臂都有时）、把实测并入 case.json、
+        清掉内核留下的空 figures/。图由绘图服务随后画进同一案例目录的 figures/。
+        """
+        case_root = Path(case_root)
+        self.write_summaries(rows, case_root=case_root)
+        for row in rows:
+            scheme = str(row.get("scheme", ""))
+            if not scheme:
+                continue
+            results_layout.drop_empty_arm_figures(case_root, scheme)
+            results_layout.update_manifest_run(case_root, scheme, {
+                "status": str(row.get("status", "")),
+                "wallclock": row.get("wallclock"),
+                "final_mass": row.get("final_mass"),
+                "final_number": row.get("final_number"),
+                "steps": row.get("total_steps"),
+                "results_dir": str(row.get("results_dir", "")),
+                "config": f"{scheme.lower()}/{results_layout.ARM_CONFIG_NAME}",
+            })
+
     def run_single(
         self,
         config_data: dict[str, Any],
@@ -254,26 +290,18 @@ class RunService:
         output_root: Path | None = None,
         log_callback: Callable[[str], None] | None = None,
     ) -> dict[str, Any]:
-        prepared = self.prepare_run(config_data, case_name, scheme, output_root=output_root)
-        return self.run_prepared(prepared, log_callback=log_callback)
+        prepared = self.prepare_case(config_data, case_name, [scheme], output_root=output_root)[0]
+        row = self.run_prepared(prepared, log_callback=log_callback)
+        self.finalize_case(prepared["case_root"], [row])
+        return row
 
     def run_comparison(self, config_data: dict[str, Any], case_name: str, log_callback: Callable[[str], None] | None = None) -> list[dict[str, Any]]:
         rows = []
-        for scheme in MIXING_ASSUMPTIONS:
+        for prepared in self.prepare_case(config_data, case_name, MIXING_ASSUMPTIONS):
             if log_callback:
-                log_callback(f"Running {case_name} / {scheme}")
-            rows.append(self.run_single(config_data, case_name, scheme, log_callback=log_callback))
-        self.write_summaries(rows, output_root=self.results_root)
-        return rows
-
-    def run_batch_comparison(self, config_data: dict[str, Any], log_callback: Callable[[str], None] | None = None) -> list[dict[str, Any]]:
-        rows = []
-        for case_name in ("coag_only", "coag_cond", "coag_cond_nucl", "baseline12h"):
-            for scheme in MIXING_ASSUMPTIONS:
-                if log_callback:
-                    log_callback(f"Running {case_name} / {scheme}")
-                rows.append(self.run_single(config_data, case_name, scheme, log_callback=log_callback))
-        self.write_summaries(rows, output_root=self.results_root)
+                log_callback(f"Running {case_name} / {prepared['scheme']}")
+            rows.append(self.run_prepared(prepared, log_callback=log_callback))
+        self.finalize_case(rows[0]["case_root"], rows)
         return rows
 
     def stop_current(self) -> bool:
@@ -337,10 +365,11 @@ class RunService:
         metrics["current_module"], metrics["latest_warning"], metrics["latest_file"] = self._read_log_status(run_root)
         return metrics
 
-    def write_summaries(self, rows: list[dict[str, Any]], output_root: Path | None = None) -> None:
+    def write_summaries(self, rows: list[dict[str, Any]], case_root: Path | None = None) -> None:
+        """案例级汇总表 → <案例>/csv/（final_state_summary.csv 只在两臂都有时写）。"""
         if not rows:
             return
-        csv_root = output_root or self.results_root
+        csv_root = results_layout.case_csv_dir(Path(case_root) if case_root else self.results_root)
         csv_root.mkdir(parents=True, exist_ok=True)
         perf_path = csv_root / "performance_summary.csv"
         # Bug #27：写出也显式 UTF-8，避免"写用系统码页、读用 UTF-8"的不对称
@@ -381,26 +410,6 @@ class RunService:
                 writer = csv.DictWriter(handle, fieldnames=list(final_rows[0].keys()))
                 writer.writeheader()
                 writer.writerows(final_rows)
-
-    def _with_case_preset(self, config_data: dict[str, Any], preset: dict[str, float | int] | None,
-                          explicit: set[str] | None = None) -> dict[str, Any]:
-        data = self.config_model.normalize(config_data)
-        if preset:
-            # Bug #11 修复（2026-09-11）：预设是"建议值"，不得覆盖显式设置。
-            # explicit 由调用方给出（GUI 的 _collect_data 比较表单与预设建议值；
-            # 探针/测试脚本可直接传入）。列进去的键保留当前值，其余键用预设值补齐/套用。
-            explicit = set(explicit or ())
-            preset_values = {
-                "with_coag": int(preset["with_coag"]),
-                "with_cond": int(preset["with_cond"]),
-                "with_nucl": int(preset["with_nucl"]),
-                "final_time_hours": float(preset["duration_hours"]),
-            }
-            for key, value in preset_values.items():
-                if key in explicit:
-                    continue
-                data["scalars"][key] = value
-        return data
 
     def _with_mixing_assumption(self, config_data: dict[str, Any], scheme: str) -> dict[str, Any]:
         data = self.config_model.normalize(config_data)
@@ -696,10 +705,48 @@ class RunService:
         # 可能不存在 → copy2 抛 FileNotFoundError，整轮判定被吞。这里补一次即可。
         logs_root = run_root / "logs"
         logs_root.mkdir(parents=True, exist_ok=True)
+        # 内核启动时会自建 <结果目录>/{csv,figures,logs}（ModuleCoeffRepartitionBoxmodel.f90:151-153），
+        # 其中 figures/ 内核从不写入（图全部由绘图服务画在案例级 figures/）⇒ 空目录直接清掉。
+        results_layout.drop_empty_arm_figures(Path(prepared["case_root"]), str(prepared["scheme"]))
         result_dir = self.runtime_dir / "RESULT"
         report_path = result_dir / "report.txt"
         if report_path.exists():
             shutil.copy2(report_path, logs_root / "report.txt")
+        # 09-30 增强（tag_init=0 参考显示）：mass_init.txt = 内核按场景分布实际生成的
+        # 每物种初始质量（物种号, 质量）。tag_init=0 时逐档质量表置灰且内核不读配置值，
+        # 这份文件是"场景到底生成了什么"的唯一机器可读记录。
+        mass_init_path = result_dir / "mass_init.txt"
+        if mass_init_path.exists():
+            shutil.copy2(mass_init_path, csv_root / "mass_init.txt")
+        # 09-30 增强（混合度指标）：INIT/fractions.txt = 每档各组的组成区间（内核自己落盘），
+        # 是"档 → 代表组成 → 混合度"的唯一来源；连同当次网格指纹一起存档，
+        # 避免重画时拿到别的配置的映射表。
+        fractions_path = self.runtime_dir / "INIT" / "fractions.txt"
+        if fractions_path.exists():
+            shutil.copy2(fractions_path, csv_root / "fractions.txt")
+            scalars = dict((prepared.get("config_data") or {}).get("scalars", {}))
+            spec = {
+                "n_groups": int(scalars.get("n_groups", 0)),
+                "n_frac": int(scalars.get("n_frac", 0)),
+                "fraction_bounds": list((prepared.get("config_data") or {}).get("fraction_bounds") or []),
+                "source": "INIT/fractions.txt",
+            }
+            (csv_root / "composition_grid.json").write_text(
+                json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        # 2026-09-30（用户反馈"文件夹太大"）：内核每一步都会写"逐格 × 逐物种"的凝并增量
+        # 诊断 CSV —— coag_delta_mass.csv（743 步 × 140 格 × 30 物种 ≈ 348 MB/案例）与
+        # coag_delta_number.csv（≈ 11 MB）。应用与仓库脚本都不读它们（纯调试产物）。
+        # 默认跑完即删；需要排查凝并重分布时设 SCRAM_KEEP_COAG_DELTAS=1 保留。
+        if os.environ.get("SCRAM_KEEP_COAG_DELTAS") != "1":
+            for name in ("coag_delta_mass.csv", "coag_delta_number.csv"):
+                candidate = csv_root / name
+                if candidate.exists():
+                    try:
+                        candidate.unlink()
+                    except OSError:
+                        pass
+
         timestep_path = csv_root / "timestep_summary.csv"
         if timestep_path.exists():
             return

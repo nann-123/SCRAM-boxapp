@@ -29,6 +29,10 @@ class SettingsService:
         default_output_directory = str(deployment_paths.user_results_root())
         requested_output_text = str(data.get("default_output_directory", default_output_directory)).strip() or default_output_directory
         requested_output_directory = Path(requested_output_text).expanduser()
+        # 2026-09-30 布局重构：旧默认根（.../results/internal_external_mixing）不再使用，
+        # 存的就是旧默认值时静默迁到新默认根；用户自定义过的路径保持不动。
+        if requested_output_directory == deployment_paths.legacy_results_root():
+            requested_output_directory = Path(default_output_directory)
         output_directory = requested_output_directory if requested_output_directory.exists() else Path(default_output_directory)
         last_template = str(data.get("last_template", "gmd_paris_full"))
         return {

@@ -44,8 +44,15 @@ def user_settings_path() -> Path:
     return user_config_dir() / "settings.json"
 
 
-def user_results_root() -> Path:
+def legacy_results_root() -> Path:
+    """旧默认结果根（2026-09-30 布局重构前）：多一层 slug 目录，现在只用于设置迁移。"""
     return user_state_dir() / "results" / "internal_external_mixing"
+
+
+def user_results_root() -> Path:
+    # 2026-09-30（布局重构）：去掉 "internal_external_mixing" 这一层 —— 现在一个实验
+    # （案例）一个目录直接挂在 <state>/results 下，不再有 工作流/模式 两级包装。
+    return user_state_dir() / "results"
 
 
 def user_report_root() -> Path:

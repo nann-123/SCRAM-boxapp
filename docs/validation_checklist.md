@@ -39,3 +39,18 @@
 - [x] 混合假设下拉初值按 `n_frac` 反推、可手动切换（不再静默弹回）。
 - [x] `docs/baseline_scram12.json` 为 1.2 数值基线（4 模板 × 2 臂，重复性逐位一致）。
 - [x] 发布包不含开发文件：打包脚本带白名单校验（发现 `undobug.md`/`BUG_TRACKING.md`/`scripts`/`source`/`*.pyc` 等即中止）。
+
+## 2026-09-30 第二批（结果布局 v2 + 报告 + 打包）
+
+- [x] 结果布局 v2：一个实验一个目录（`<根>/<实验名>/{case.json,figures,csv,<臂>/…}`），无 `runs/<案例>/` 套娃、无 `single/compare` 模式层、臂级无空 `figures/`。
+- [x] 重跑不再丢数据：旧结果整目录搬进 `<根>/history/<实验名>_<时间戳>/`（同盘 rename，默认留 3 份，`SCRAM_CASE_HISTORY_KEEP` 可调）；界面「运行记录」以 `[历史]` 前缀列出。
+- [x] 默认结果根去掉了 `internal_external_mixing` 层（`<state>/scram_boxapp_mixing/results`），旧设置值自动迁移。
+- [x] 报告落在所选实验目录（`<案例>/report/<案例>_report.pdf`），不同实验各自一份；报告目录只留 tex/pdf，高清图 300 dpi 重绘到临时目录、嵌完即删。
+- [x] 报告 PDF 插图按原图 1:1 嵌入（内嵌位图 2400×1350 / 截图 1600×1020），放大 3 倍轴标签清晰。
+- [x] 界面提示去掉内部编号与内核黑话（19 条 zh/en 同步改写；下拉标签不再带 `tag_init=1` 之类字段名）。
+- [x] `docs/screenshots/*.png` 重抓（含两本手册资产），手册 PDF 重出。
+- [x] 案例目录瘦身：默认丢弃 `coag_delta_*` 调试转储（36 个案例目录合计 432 MB → 42 MB；`SCRAM_KEEP_COAG_DELTAS=1` 可留）。
+- [x] 发布闸门 `run_standard_tests.py --require-core-1.2` 全绿；内核 md5 `6f7cd2e1…` 与基线锚点一致；`collect_baseline` 复采 8 行与 `docs/baseline_scram12.json` **逐位一致**、两遍重复逐位一致。
+- [x] 发布测试逮到并修掉两个打包缺陷：① PyInstaller 6.x 下 `--add-data` 把 `config_schema.json` 建成了**目录**（运行时 PermissionError）；② teaching 基座 `examples/configs` 未进包（两个教学模板 FileNotFoundError）。
+- [x] 打包脚本新增**发布自检**：打包完成后自动用打包版 exe 跑"载入全部 8 个模板 + 一次最快对比算例"，失败即中止打包；本次从干净环境（先删暂存运行时）跑通。
+- [x] 便携 zip 解包后同样跑通自检（8 模板 + 算例 ok + 11 图）。

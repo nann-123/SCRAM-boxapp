@@ -71,8 +71,8 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     base = template_service.load_template(args.template)
+    # 2026-09-30：案例预设删除后，时长就是 cfg 里的值本身（原 explicit_keys 保护不再需要）。
     base["scalars"]["final_time_hours"] = float(args.hours)
-    base["explicit_keys"] = ["final_time_hours"]  # 别让案例预设把时长改回去
 
     rows = []
     for rh in args.rh_list:
