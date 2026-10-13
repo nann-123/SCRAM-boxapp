@@ -1216,7 +1216,13 @@ MODULE Discretization
     if(nucl_model.eq.5) then
     time_emis=60.d0*60.d0*12.d0
     else
-    time_emis=2.64376d3
+    ! 2026-10-13 (upstream hardcoded-window fix, docs/BUG_TRACKING #17): the previous
+    ! 2.64376d3 (~44 min) emission window was an upstream leftover, which cut the
+    ! emission off after ~44 min in a 12 h run. The window now adapts to the total
+    ! simulation time final_time (seconds; read from the cfg line
+    ! "## Total Simulation time in hours" and multiplied by 3600).
+    ! nucl_model=5 (verification path) keeps the 43200 s window as before.
+    time_emis=final_time
     endif
     !print*,'emis'
     if((current_time+time_step).lt.time_emis) then
@@ -1290,10 +1296,21 @@ MODULE Discretization
     integer::j,jesp,k
     double precision::current_time,time_step
     double precision::tscale,t_total
+    double precision::time_emis_window
+
+    ! 2026-10-13: keep the substep window aligned with the adaptive window used by
+    ! emission(): general paths follow the total simulation time; the verification
+    ! path (nucl_model=5) keeps its original constants so reference behavior is
+    ! bit-identical.
+    if(nucl_model.eq.5) then
+      time_emis_window=2.64376d3
+    else
+      time_emis_window=final_time
+    endif
 
     !for non C/E species
     time_step=final_time
-    if(with_coag.eq.1.and.current_time.lt.2.64376d3) then
+    if(with_coag.eq.1.and.current_time.lt.time_emis_window) then
       tscale=0.d0
       do j=1,N_size
 	k=concentration_index(j, 1)
@@ -1306,7 +1323,7 @@ MODULE Discretization
       enddo
     endif
 	      !for C/E species
-    if (with_cond+tag_nucl.gt.0.and.current_time.lt.2.64376d3) then
+    if (with_cond+tag_nucl.gt.0.and.current_time.lt.time_emis_window) then
       do jesp=ENA,N_aerosol
 	 if(gas_emision_rate(jesp)*total_aero_mass(jesp).gt.0.d0) then
 	    tscale=total_aero_mass(jesp)/gas_emision_rate(jesp)

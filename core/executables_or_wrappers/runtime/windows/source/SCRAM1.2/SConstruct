@@ -58,10 +58,14 @@ env.Replace(LINK = fortran_linker)
 def split_flags(text):
     return [token for token in text.split() if token]
 
-netcdf_fflags = split_flags(os.popen("nf-config --fflags 2>/dev/null").read().strip())
-netcdf_flibs = split_flags(os.popen("nf-config --flibs 2>/dev/null").read().strip())
-netcdf_cflags = split_flags(os.popen("nc-config --cflags 2>/dev/null").read().strip())
-netcdf_clibs = split_flags(os.popen("nc-config --libs 2>/dev/null").read().strip())
+# Windows cmd 下 `2>/dev/null` 会报"系统找不到指定的路径"并直接失效（重定向目标
+# dev\NULL 不存在），导致 above 探测全部拿不到 netcdf 标志、`use netcdf` 编译失败。
+# 用 os.devnull 跨平台（Windows='nul'，Linux='/dev/null'）。
+_devnull = os.devnull
+netcdf_fflags = split_flags(os.popen(f"nf-config --fflags 2>{_devnull}").read().strip())
+netcdf_flibs = split_flags(os.popen(f"nf-config --flibs 2>{_devnull}").read().strip())
+netcdf_cflags = split_flags(os.popen(f"nc-config --cflags 2>{_devnull}").read().strip())
+netcdf_clibs = split_flags(os.popen(f"nc-config --libs 2>{_devnull}").read().strip())
 
 for token in netcdf_fflags + netcdf_cflags:
     if token.startswith("-I"):
